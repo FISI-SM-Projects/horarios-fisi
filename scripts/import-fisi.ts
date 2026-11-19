@@ -3,9 +3,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { text } from "node:stream/consumers";
-import { neon } from "@neondatabase/serverless";
 import * as XLSX from "xlsx";
-import { ensureScheduleSchema } from "@/lib/data/schedule-db";
+import { ensureScheduleSchema, getSql } from "@/lib/data/schedule-db";
 
 type FisiCourse = {
   id: string;
@@ -67,7 +66,7 @@ if (teachers.length !== 93) {
 }
 
 await ensureScheduleSchema();
-const sql = neon(databaseUrl);
+const sql = getSql(databaseUrl);
 
 for (const course of courses) {
   await sql.query(

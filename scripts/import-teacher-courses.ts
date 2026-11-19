@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { neon } from "@neondatabase/serverless";
+import { getSql } from "@/lib/data/schedule-db";
 import {
   buildTeacherCourseImport,
   parseTeacherCourseCsv,
@@ -21,7 +21,7 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required.");
 }
 
-const sql = neon(process.env.DATABASE_URL);
+const sql = getSql(process.env.DATABASE_URL);
 const [teachers, courses, existingAssignments] = await Promise.all([
   readTeachers(),
   readCourses(),

@@ -8,7 +8,7 @@ Horarios UNMSM is a teacher availability registration system for the Faculty of 
 
 - **Extensibility over scalability**: the expected load is the FISI community, not tens of thousands of concurrent users. Design decisions prioritize ease of modification and code readability.
 - **Logical layer separation in a single repository**: the UI, domain logic, and data access live in the same repository but in clearly bounded modules. The layer boundary is maintained by convention, not by distributed infrastructure.
-- **Testable domain without a framework**: `src/lib/schedule-rules.ts` and `src/lib/schedule-data.ts` have no dependency on Next.js, auth services, or Neon. Their functions are pure and have test coverage that runs without starting the server.
+- **Testable domain without a framework**: `src/lib/schedule-rules.ts` and `src/lib/schedule-data.ts` have no dependency on Next.js, auth services, or external database services. Their functions are pure and have test coverage that runs without starting the server.
 
 ## Layers
 
@@ -33,7 +33,7 @@ flowchart TB
 
     subgraph Data["Data"]
         I["schedule-db.ts\n(parameterized SQL + ensureScheduleSchema)"]
-        J[("Neon Postgres")]
+        J[("PostgreSQL 18 (Docker)")]
     end
 
     subgraph Auth["Authentication"]
@@ -80,7 +80,7 @@ The three roles and their permissions:
 Summarized here; details in each ADR:
 
 - **Next.js full-stack** (`docs/adr/0001-nextjs-fullstack.md`): one repository, short feedback loop, Server Components; a separate Spring Boot backend was ruled out because the need was extensibility, not horizontal scale.
-- **Postgres with raw SQL** (`docs/adr/0002-postgres-raw-sql.md`): Neon Postgres with `@neondatabase/serverless` and parameterized SQL; no ORM to keep SQL transparent and didactic.
+- **Postgres with raw SQL** (`docs/adr/0002-postgres-raw-sql.md`): Local PostgreSQL 18 with standard `pg` driver, connection pooling, and parameterized SQL; no ORM to keep SQL transparent and didactic.
 - **Institutional LDAP via BFF** (`docs/adr/0004-institutional-ldap-auth.md`): `av-auth-microservice` for LDAP authentication with encrypted Next.js BFF session cookies. (Supersedes `0003-clerk-roles.md`).
 
 ## Operations
@@ -110,7 +110,7 @@ Validates protected routes and authentication state of the deployment.
 bun run ops:verify
 ```
 
-Operational verification against production: checks public routes, critical env vars, schema, Neon counts, and availability and slot invariants. See README for the full command with its parameters.
+Operational verification against production: checks public routes, critical env vars, schema, database counts, and availability and slot invariants. See README for the full command with its parameters.
 
 The `/api/health` endpoint returns a JSON status object and requires no authentication.
 

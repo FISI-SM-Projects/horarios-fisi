@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-import { neon } from "@neondatabase/serverless";
-import { verifyScheduleSchema } from "../src/lib/data/schedule-db";
+import { getSql, verifyScheduleSchema } from "../src/lib/data/schedule-db";
 
 type Check = {
   name: string;
@@ -250,7 +249,7 @@ async function verifyPublicRoutes(base: string): Promise<Check[]> {
 }
 
 async function readCounts(): Promise<Counts> {
-  const sql = neon(process.env.DATABASE_URL ?? "");
+  const sql = getSql(process.env.DATABASE_URL);
   const rows = (await sql.query(`
     with teacher_course_counts as (
       select

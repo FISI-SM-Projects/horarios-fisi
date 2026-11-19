@@ -8,14 +8,14 @@
 // module does not call getSql() at load time.
 
 import { afterAll, beforeAll, beforeEach, expect, it } from "bun:test";
-import type { NeonQueryFunction } from "@neondatabase/serverless";
-import { neon } from "@neondatabase/serverless";
 import {
   addCourse,
   approveSchedule,
   deleteClerkUser,
   ensureScheduleSchema,
   getSchedulePayload,
+  getSql,
+  type SqlClient,
   setAvailability,
   setContract,
   submitSchedule,
@@ -36,7 +36,7 @@ import type { AppRole } from "@/lib/domain/types";
 // DATABASE_URL so neon() receives the correct URL.
 // ---------------------------------------------------------------------------
 
-let sql: NeonQueryFunction<false, false>;
+let sql: SqlClient;
 
 // ---------------------------------------------------------------------------
 // Helper: insert a minimal teacher_profiles row directly (no Clerk identity
@@ -136,7 +136,7 @@ describeDb("schedule-db (DB-backed characterization)", () => {
     setupTestDb();
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) throw new Error("DATABASE_URL not set after setupTestDb");
-    sql = neon(dbUrl);
+    sql = getSql(dbUrl);
     // Idempotency check: run ensureScheduleSchema twice — must not throw on
     // second call (CHARACTERIZATION: create-if-not-exists is idempotent).
     await ensureScheduleSchema();

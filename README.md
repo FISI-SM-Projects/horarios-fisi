@@ -7,7 +7,7 @@ Open-source app for recording teacher availability, validating rules by contract
 - Next.js 16
 - React 19
 - Microservicio de Autenticación Institucional (LDAP / av-auth-microservice)
-- Neon Postgres
+- PostgreSQL 18 (Docker: postgres:18-alpine)
 - shadcn/ui
 - Tailwind CSS 4
 - Bun
@@ -23,52 +23,51 @@ Open-source app for recording teacher availability, validating rules by contract
 
 ## Development
 
+1. Levantar el contenedor de PostgreSQL local:
+
+```bash
+docker compose up -d postgres
+```
+
+2. Configurar `.env.local` a partir de `.env.example`:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Inicializar el esquema y catálogo base:
+
 ```bash
 bun install
+bun run db:migrate
 bun dev
 ```
 
-Configure `.env.local` from `.env.example`. To prepare Neon:
-
-```bash
-bun run db:migrate
-```
-
-The migration creates the schema, verifies critical columns and constraints, and seeds only the base course catalog. Demo teachers are seeded only if you run `bun run db:migrate --demo`.
+La migración crea el esquema relacional, verifica tablas y restricciones críticas, y siembra el catálogo de cursos. Para incluir docentes de demostración, ejecutar `bun run db:migrate --demo`.
 
 ## Quality
 
 ```bash
 bun run check
-bun run smoke https://horarios-unmsm.vercel.app
 ```
 
 ### Database tests
 
-The characterization tests in `src/lib/data/schedule-db.test.ts` require a dedicated Neon database. Never use the production URL.
-
-To create a Neon branch exclusively for tests: `neonctl branches create --name tests --parent main --project-id <your-project>`.
-
-Then run the full suite with:
+Las pruebas de integración y caracterización de `src/lib/data/schedule-db.test.ts` se ejecutan localmente contra la base de datos de test en Docker (`horarios_fisi_test`):
 
 ```bash
-TEST_DATABASE_URL=postgres://... bun run test
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/horarios_fisi_test bun test
 ```
 
-Without `TEST_DATABASE_URL`, the 18 DB tests are skipped automatically (`describe.skip`) and the rest of the suite stays green.
+Sin `TEST_DATABASE_URL`, las pruebas que requieren conexión a base de datos se omiten automáticamente (`describe.skip`) y el resto de la suite continúa en verde.
 
-`bun run check` runs Biome, schedule-rule tests, and a production build. The smoke test validates protected routes and authentication state of the deployment.
+## On-Premise Deployment (Production)
 
-For an operational verification against production:
+Para desplegar la aplicación y la base de datos de forma autónoma en servidores locales:
 
 ```bash
-vercel env pull /tmp/horarios-unmsm-prod.env --environment=production
-neonctl connection-string <branch> --project-id <project> --role-name <app-role> --database-name neondb --pooled --ssl require --no-color > /tmp/horarios-unmsm-db.url
-bun run ops:verify -- --vercel-env-file /tmp/horarios-unmsm-prod.env --database-url-file /tmp/horarios-unmsm-db.url --min-teachers 90 --min-linked-teachers 90 --min-active-courses 200
-rm -f /tmp/horarios-unmsm-prod.env /tmp/horarios-unmsm-db.url
+docker compose up -d --build
 ```
-
-The verifier checks public routes, critical env vars, schema, Neon counts, and availability and slot invariants without printing secrets. `DATABASE_URL` is passed via a temporary file because in Vercel it must be marked as sensitive and `env pull` may return only a placeholder.
 
 ## Teacher Import
 

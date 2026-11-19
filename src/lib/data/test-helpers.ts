@@ -1,5 +1,5 @@
 import { describe } from "bun:test";
-import type { NeonQueryFunction } from "@neondatabase/serverless";
+import type { SqlClient } from "@/lib/data/schedule-db";
 import type { AppRole, ScheduleIdentity } from "@/lib/domain/types";
 
 // getSql() in schedule-db.ts calls neon(process.env.DATABASE_URL) on every
@@ -35,7 +35,7 @@ export function setupTestDb() {
 
 // resetDb truncates all 10 application tables and resets sequences.
 // Order matters: child tables before parents to satisfy FK constraints.
-export async function resetDb(sql: NeonQueryFunction<false, false>) {
+export async function resetDb(sql: SqlClient) {
   await sql.query(`
     truncate
       teacher_sandbox_courses,

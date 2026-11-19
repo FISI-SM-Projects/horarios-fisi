@@ -1,6 +1,5 @@
-import { neon } from "@neondatabase/serverless";
 import * as XLSX from "xlsx";
-import { ensureScheduleSchema } from "@/lib/data/schedule-db";
+import { ensureScheduleSchema, getSql } from "@/lib/data/schedule-db";
 import { normalizeDepartment } from "@/lib/domain/schedule-data";
 
 type FisiTeacher = {
@@ -30,7 +29,7 @@ if (!databaseUrl) {
 
 await ensureScheduleSchema();
 
-const sql = neon(databaseUrl);
+const sql = getSql(databaseUrl);
 const teachers = readTeachers(source);
 const existingRows = (await sql.query(
   "select id, lower(email) as email, teacher_code from teacher_profiles",

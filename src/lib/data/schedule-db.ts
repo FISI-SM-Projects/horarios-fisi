@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless";
+import { Pool, type QueryResultRow } from "pg";
 import {
   type ContractKey,
   type Course,
@@ -133,12 +133,104 @@ const defaultAcademicTerm = "2026.2";
 
 let seedReady: Promise<void> | undefined;
 
-function getSql() {
-  const databaseUrl = process.env.DATABASE_URL;
+export type TxQuery = { text: string; values: unknown[] };
+export type TxTag = (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => TxQuery;
+
+export function tx(
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+): TxQuery {
+  let text = "";
+  for (let i = 0; i < strings.length; i++) {
+    text += strings[i];
+    if (i < values.length) {
+      text += `$${i + 1}`;
+    }
+  }
+  return { text, values };
+}
+
+export type SqlClient = {
+  query: <T extends QueryResultRow = QueryResultRow>(
+    queryText: string,
+    params?: unknown[],
+  ) => Promise<T[]>;
+  transaction: (
+    callback: (
+      txTag: TxTag,
+    ) =>
+      | (TxQuery | Promise<TxQuery>)[]
+      | Promise<(TxQuery | Promise<TxQuery>)[]>,
+  ) => Promise<void>;
+};
+
+declare global {
+  var _pgPool: Pool | undefined;
+  var _pgPoolUrl: string | undefined;
+}
+
+export function getPool(connectionString?: string): Pool {
+  const databaseUrl = connectionString || process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required.");
   }
-  return neon(databaseUrl);
+
+  if (globalThis._pgPool && globalThis._pgPoolUrl === databaseUrl) {
+    return globalThis._pgPool;
+  }
+
+  if (globalThis._pgPool && globalThis._pgPoolUrl !== databaseUrl) {
+    void globalThis._pgPool.end();
+  }
+
+  const pool = new Pool({
+    connectionString: databaseUrl,
+  });
+
+  globalThis._pgPool = pool;
+  globalThis._pgPoolUrl = databaseUrl;
+  return pool;
+}
+
+export function getSql(connectionString?: string): SqlClient {
+  const pool = getPool(connectionString);
+  return {
+    async query<T extends QueryResultRow = QueryResultRow>(
+      queryText: string,
+      params?: unknown[],
+    ): Promise<T[]> {
+      const result = await pool.query<T>(queryText, params);
+      return result.rows;
+    },
+    async transaction(
+      callback: (
+        txTag: TxTag,
+      ) =>
+        | (TxQuery | Promise<TxQuery>)[]
+        | Promise<(TxQuery | Promise<TxQuery>)[]>,
+    ): Promise<void> {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const list = await callback(tx);
+        const resolvedQueries = await Promise.all(list);
+        for (const item of resolvedQueries) {
+          if (item && typeof item === "object" && "text" in item) {
+            await client.query(item.text, item.values);
+          }
+        }
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+  };
 }
 
 export async function ensureScheduleSchema() {

@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: horarios-fisi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-horarios_fisi}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-horarios_fisi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horarios-fisi-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-horarios_fisi}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://localhost:5000}
+      AUTH_SYSTEM_CODE: ${AUTH_SYSTEM_CODE:-HORARIOS_FISI}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-desarrollo_secreto_super_seguro_fisi_32_chars}
+      DIRECTION_ACCESS_CODE: ${DIRECTION_ACCESS_CODE:-}
+      DIRECTION_EMAIL_ALLOWLIST: ${DIRECTION_EMAIL_ALLOWLIST:-}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  postgres_data:
