@@ -31,6 +31,8 @@ export type ScheduleMutationAction =
       school: string;
     }
   | { action: "setPeriodClosed"; closed: boolean }
+  | { action: "requestReopen" }
+  | { action: "authorizeReopen"; teacherId: string }
   | { action: "submit" };
 
 export type TeacherCourseImportAction = {

@@ -334,7 +334,7 @@ export async function ensureScheduleSchema() {
       name text not null,
       email text not null,
       contract text not null check (contract in ('full', 'partial20', 'partial10')),
-      status text not null default 'borrador' check (status in ('enviado', 'borrador', 'observado', 'aprobado')),
+      status text not null default 'borrador' check (status in ('enviado', 'borrador', 'observado', 'aprobado', 'solicitud_reapertura')),
       submitted_at text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -405,7 +405,13 @@ export async function ensureScheduleSchema() {
     "alter table teacher_profiles drop constraint if exists teacher_profiles_status_check",
   );
   await sql.query(
-    "alter table teacher_profiles add constraint teacher_profiles_status_check check (status in ('enviado', 'borrador', 'observado', 'aprobado'))",
+    "alter table teacher_profiles add constraint teacher_profiles_status_check check (status in ('enviado', 'borrador', 'observado', 'aprobado', 'solicitud_reapertura'))",
+  );
+  await sql.query(
+    "alter table teacher_sandboxes drop constraint if exists teacher_sandboxes_status_check",
+  );
+  await sql.query(
+    "alter table teacher_sandboxes add constraint teacher_sandboxes_status_check check (status in ('enviado', 'borrador', 'observado', 'aprobado', 'solicitud_reapertura'))",
   );
   await sql.query(
     "alter table courses add column if not exists active boolean not null default true",
@@ -619,9 +625,6 @@ export async function getSchedulePayload(
       : canUseDirection
         ? "administrative"
         : "official";
-  const departmentScope = canUseAdmin
-    ? undefined
-    : normalizeDepartment(user.school);
   const [
     catalog,
     schoolOptions,
@@ -635,12 +638,10 @@ export async function getSchedulePayload(
     readSchools(),
     readDepartments(),
     readSettings(),
-    canUseDirection
-      ? readTeachers(departmentScope)
-      : Promise.resolve([profile]),
+    canUseDirection ? readTeachers(undefined) : Promise.resolve([profile]),
     canUseAdmin ? readUsers() : Promise.resolve([]),
     canUseDirection
-      ? readScheduleEvents(undefined, departmentScope)
+      ? readScheduleEvents(undefined, undefined)
       : readScheduleEvents(profile.id),
   ]);
   return {
@@ -1549,6 +1550,88 @@ export async function submitSchedule(identity: ScheduleIdentity) {
   return getSchedulePayload(identity);
 }
 
+export async function requestScheduleReopen(identity: ScheduleIdentity) {
+  if (identity.preview) {
+    return getPreviewPayload(identity);
+  }
+  await ensurePeriodOpen();
+  const sql = getSql();
+  const workspace = await getWritableTeacherWorkspace(identity);
+  const profile = workspace.sandbox
+    ? await readTeacherSandbox(workspace.profile.id)
+    : await readTeacher(workspace.profile.id);
+
+  if (profile.status !== "enviado" && profile.status !== "aprobado") {
+    throw new ScheduleError(
+      "Solo puedes solicitar reapertura de horarios enviados o aprobados.",
+      400,
+    );
+  }
+
+  const requestedAt = formatTimestamp();
+  if (workspace.sandbox) {
+    await sql.query(
+      `
+        update teacher_sandboxes
+        set status = 'solicitud_reapertura', updated_at = now()
+        where id = $1
+      `,
+      [workspace.profile.id],
+    );
+    return getSchedulePayload(identity);
+  }
+
+  const actorId = identity.ldapUid || identity.clerkUserId || "";
+  await sql.query(
+    `
+      with updated as (
+        update teacher_profiles
+        set status = 'solicitud_reapertura', updated_at = now()
+        where id = $1
+        returning id
+      )
+      insert into schedule_events (teacher_id, actor_user_id, event_type, metadata)
+      select id, $2, 'teacher.requested_reopen', $3::jsonb from updated
+    `,
+    [workspace.profile.id, actorId, JSON.stringify({ requestedAt })],
+  );
+  return getSchedulePayload(identity);
+}
+
+export async function authorizeScheduleReopen(
+  identity: ScheduleIdentity,
+  teacherId: string,
+) {
+  if (identity.preview) {
+    return getPreviewPayload(identity);
+  }
+  await ensureTeacherReviewAccess(identity, teacherId);
+  await ensurePeriodOpen();
+  const sql = getSql();
+  const authorizedAt = formatTimestamp();
+  const actorId = identity.ldapUid || identity.clerkUserId || "";
+
+  const result = (await sql.query(
+    `
+      with updated as (
+        update teacher_profiles
+        set status = 'borrador', review_note = '', approved_at = null, updated_at = now()
+        where id = $1
+        returning id
+      )
+      insert into schedule_events (teacher_id, actor_user_id, event_type, metadata)
+      select id, $2, 'director.authorized_reopen', $3::jsonb from updated
+      returning teacher_id
+    `,
+    [teacherId, actorId, JSON.stringify({ authorizedAt })],
+  )) as { teacher_id: string }[];
+
+  if (result.length === 0) {
+    throw new ScheduleError("Docente no encontrado.", 404);
+  }
+  return getSchedulePayload(identity);
+}
+
 export async function setPeriodClosed(
   identity: ScheduleIdentity,
   closed: boolean,
@@ -1636,24 +1719,14 @@ async function ensureAdmin(identity: ScheduleIdentity) {
 
 async function ensureTeacherReviewAccess(
   identity: ScheduleIdentity,
-  teacherId: string,
+  _teacherId: string,
 ) {
   await ensureSeeded();
   const user = await ensureUser(identity);
-  if (user.role === "admin") {
+  if (user.role === "admin" || user.role === "direccion") {
     return user;
   }
-  if (user.role !== "direccion") {
-    throw new ScheduleError("No tienes acceso Dirección.", 403);
-  }
-  const teacher = await readTeacher(teacherId);
-  if (
-    !teacher.department ||
-    normalizeDepartment(teacher.department) !== normalizeDepartment(user.school)
-  ) {
-    throw new ScheduleError("Docente fuera de tu departamento.", 403);
-  }
-  return user;
+  throw new ScheduleError("No tienes acceso Dirección.", 403);
 }
 
 function canUseDirectionRole(role: AppRole) {
@@ -2242,10 +2315,11 @@ async function readTeachers(departmentScope?: string) {
         or lower(coalesce(tp.department, '')) = lower($1)
       order by
         case tp.status
-          when 'observado' then 0
-          when 'borrador' then 1
+          when 'solicitud_reapertura' then 0
+          when 'observado' then 1
           when 'enviado' then 2
-          else 3
+          when 'borrador' then 3
+          else 4
         end,
         tp.name asc
     `,

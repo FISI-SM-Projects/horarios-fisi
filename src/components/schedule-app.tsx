@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Sun,
   Trash2,
+  Unlock,
   Upload,
   UserCog,
   Users,
@@ -134,7 +135,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ScheduleMutationAction } from "@/lib/api/schedule-action-types";
-import { visibleCoursesForSchool } from "@/lib/domain/schedule-courses";
+import {
+  curriculaForSchool,
+  visibleCoursesForSchool,
+  visibleCoursesForSchoolAndCurriculum,
+} from "@/lib/domain/schedule-courses";
 import {
   type ContractKey,
   type Course,
@@ -145,6 +150,7 @@ import {
   departments,
   formatHour,
   hours,
+  normalizeDepartment,
   schools,
   slotKey,
   type TeacherProfile,
@@ -239,6 +245,7 @@ export function ScheduleApp({
       : courseCatalog[0].id,
   );
   const [showOnlyPending, setShowOnlyPending] = useState(false);
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [teacherQuery, setTeacherQuery] = useState("");
   const [teacherStatusFilter, setTeacherStatusFilter] =
     useState<TeacherStatusFilter>("all");
@@ -324,6 +331,7 @@ export function ScheduleApp({
       return;
     }
     const nextTeachers = filterTeachers(data.teachers, {
+      departmentFilter,
       query: teacherQuery,
       showOnlyPending,
       statusFilter: teacherStatusFilter,
@@ -338,6 +346,7 @@ export function ScheduleApp({
     setReviewNote(nextTeachers[0].reviewNote ?? "");
   }, [
     data,
+    departmentFilter,
     selectedTeacherId,
     showOnlyPending,
     teacherQuery,
@@ -402,6 +411,7 @@ export function ScheduleApp({
   const profile = data.profile;
   const allTeachers = data.teachers;
   const filteredTeachers = filterTeachers(allTeachers, {
+    departmentFilter,
     query: teacherQuery,
     showOnlyPending,
     statusFilter: teacherStatusFilter,
@@ -491,41 +501,95 @@ export function ScheduleApp({
       return;
     }
 
-    const hourIndex = hours.indexOf(hour);
-    // Criterio: Si no alcanza para un bloque de 4 hacia abajo, se omite silenciosamente sin alertas
-    if (hourIndex === -1 || hourIndex + 4 > hours.length) {
+    if (
+      profile.status === "enviado" ||
+      profile.status === "aprobado" ||
+      profile.status === "solicitud_reapertura"
+    ) {
+      toast.error(
+        "El horario está bloqueado para edición. Solicita reapertura para modificarlo.",
+      );
       return;
     }
 
-    // Obtenemos la celda seleccionada + las 3 siguientes hacia abajo (1 + 3 = 4)
-    const blockHours = hours.slice(hourIndex, hourIndex + 4);
-    const blockKeys = blockHours.map((h) => slotKey(day, h));
+    const clickedKey = slotKey(day, hour);
+    const currentAvailability = profile.availability;
+    const isCurrentlySelected = currentAvailability.includes(clickedKey);
 
-    const previous = data;
-    let availability: string[] | null = null;
+    let nextSlots: string[] = [];
 
-    updateTeacherInData(profile.id, (teacher) => {
-      const next = new Set(teacher.availability);
-      // Si todas las celdas del bloque ya están seleccionadas, se desmarcan; caso contrario, se marcan las 4
-      const allSelected = blockKeys.every((key) => next.has(key));
+    if (isCurrentlySelected) {
+      // Encuentra el bloque contiguo en este día que contiene la hora clickeada
+      const dayHours = currentAvailability
+        .filter((key) => key.startsWith(`${day}-`))
+        .map((key) => Number(key.split("-")[1]))
+        .sort((a, b) => a - b);
 
-      for (const key of blockKeys) {
-        if (allSelected) {
-          next.delete(key);
-        } else {
-          next.add(key);
-        }
+      let blockStartIndex = dayHours.indexOf(hour);
+      while (
+        blockStartIndex > 0 &&
+        dayHours[blockStartIndex - 1] === dayHours[blockStartIndex] - 1
+      ) {
+        blockStartIndex -= 1;
+      }
+      let blockEndIndex = dayHours.indexOf(hour);
+      while (
+        blockEndIndex < dayHours.length - 1 &&
+        dayHours[blockEndIndex + 1] === dayHours[blockEndIndex] + 1
+      ) {
+        blockEndIndex += 1;
+      }
+      const blockHoursToRemove = dayHours.slice(
+        blockStartIndex,
+        blockEndIndex + 1,
+      );
+      const keysToRemove = new Set(
+        blockHoursToRemove.map((h) => slotKey(day, h)),
+      );
+      nextSlots = currentAvailability.filter((key) => !keysToRemove.has(key));
+    } else {
+      const hourIndex = hours.indexOf(hour);
+      if (hourIndex === -1 || hourIndex + 4 > hours.length) {
+        toast.error(
+          "No hay espacio suficiente para un bloque completo de 4 horas.",
+        );
+        return;
+      }
+      const blockHours = hours.slice(hourIndex, hourIndex + 4);
+      const blockKeys = blockHours.map((h) => slotKey(day, h));
+
+      // Comprobación de solapamiento
+      const overlaps = blockKeys.some((key) =>
+        currentAvailability.includes(key),
+      );
+      if (overlaps) {
+        toast.error(
+          "El bloque de 4 horas se solapa con un horario ya seleccionado.",
+        );
+        return;
       }
 
-      availability = Array.from(next).sort();
-      return { ...teacher, availability, status: "borrador" };
-    });
+      // Comprobación de límite del contrato
+      const rule = contractRules[profile.contract];
+      if (currentAvailability.length + 4 > rule.requiredHours) {
+        toast.error(
+          `No puedes superar el total de ${rule.requiredHours} horas de tu régimen.`,
+        );
+        return;
+      }
 
-    if (!availability) {
-      return;
+      nextSlots = [...currentAvailability, ...blockKeys].sort();
     }
 
-    const nextAvailability = availability;
+    const previous = data;
+
+    updateTeacherInData(profile.id, (teacher) => ({
+      ...teacher,
+      availability: nextSlots,
+      status: "borrador",
+    }));
+
+    const nextAvailability = nextSlots;
     const mutationId = availabilityMutationRef.current + 1;
     availabilityMutationRef.current = mutationId;
     setAvailabilitySaving(true);
@@ -748,6 +812,35 @@ export function ScheduleApp({
     });
     if (payload) {
       toast.success("Horario aprobado.");
+    }
+  };
+
+  const handleRequestReopen = async () => {
+    if (periodClosed) {
+      toast.error("El periodo académico está cerrado.");
+      return;
+    }
+    const payload = await request({
+      action: "requestReopen",
+    });
+    if (payload) {
+      toast.success("Solicitud de reapertura enviada a Dirección.");
+    }
+  };
+
+  const handleAuthorizeReopen = async (teacherId: string) => {
+    if (periodClosed) {
+      toast.error("El periodo académico está cerrado.");
+      return;
+    }
+    const payload = await request({
+      action: "authorizeReopen",
+      teacherId,
+    });
+    if (payload) {
+      toast.success(
+        "Reapertura autorizada. El docente ahora puede modificar su horario.",
+      );
     }
   };
 
@@ -1033,6 +1126,7 @@ export function ScheduleApp({
           handleExportAllPdf={handleExportAllPdf}
           handleExportXlsx={handleExportXlsx}
           handleApproveTeacher={handleApproveTeacher}
+          handleAuthorizeReopen={handleAuthorizeReopen}
           handleAssignTeacherCourse={handleAssignTeacherCourse}
           handleObserveTeacher={handleObserveTeacher}
           handleUnassignTeacherCourse={handleUnassignTeacherCourse}
@@ -1046,6 +1140,9 @@ export function ScheduleApp({
           setShowOnlyPending={setShowOnlyPending}
           setTeacherQuery={setTeacherQuery}
           setTeacherStatusFilter={setTeacherStatusFilter}
+          setDepartmentFilter={setDepartmentFilter}
+          departmentFilter={departmentFilter}
+          departments={departmentOptions}
           showOnlyPending={showOnlyPending}
           saving={saving}
           selectedTeacherVisible={selectedTeacherVisible}
@@ -1065,12 +1162,14 @@ export function ScheduleApp({
       ) : (
         <DocenteView
           academicTerm={academicTerm}
+          catalog={activeCatalog}
           catalogForSchool={catalogForSchool}
           courseId={courseId}
           courseSaving={courseSavingIds.includes(profile.id)}
           handleAddCourse={handleAddCourse}
           handleContractChange={handleContractChange}
           handleRemoveCourse={handleRemoveCourse}
+          handleRequestReopen={handleRequestReopen}
           handleSubmit={handleSubmit}
           handleToggleSlot={handleToggleSlot}
           periodClosed={periodClosed}
@@ -1774,12 +1873,14 @@ function OnboardingView({
 
 function DocenteView({
   academicTerm,
+  catalog,
   catalogForSchool,
   courseId,
   courseSaving,
   handleAddCourse,
   handleContractChange,
   handleRemoveCourse,
+  handleRequestReopen,
   handleSubmit,
   handleToggleSlot,
   periodClosed,
@@ -1794,12 +1895,14 @@ function DocenteView({
   validation,
 }: {
   academicTerm: string;
+  catalog: Course[];
   catalogForSchool: Course[];
   courseId: string;
   courseSaving: boolean;
   handleAddCourse: () => void;
   handleContractChange: (contract: ContractKey) => void;
   handleRemoveCourse: (id: string) => void;
+  handleRequestReopen: () => Promise<void>;
   handleSubmit: () => void;
   handleToggleSlot: (day: DayKey, hour: number) => void;
   periodClosed: boolean;
@@ -1813,6 +1916,11 @@ function DocenteView({
   teacherMode: SchedulePayload["teacherMode"];
   validation: Validation;
 }) {
+  const isLocked =
+    periodClosed ||
+    profile.status === "enviado" ||
+    profile.status === "aprobado" ||
+    profile.status === "solicitud_reapertura";
   const selectedCourse = catalogForSchool.find(
     (course) => course.id === courseId,
   );
@@ -1825,17 +1933,19 @@ function DocenteView({
       validation.countedCourses >= contractRules[profile.contract].maxCourses,
   );
   const addCourseDisabled =
-    periodClosed ||
+    isLocked ||
     !selectedCourse ||
     selectedCourseAlreadyAdded ||
     selectedCourseLimitReached;
   const addCourseLabel = periodClosed
     ? "Cerrado"
-    : selectedCourseAlreadyAdded
-      ? "Agregado"
-      : selectedCourseLimitReached
-        ? "Cupo lleno"
-        : "Agregar";
+    : isLocked
+      ? "Bloqueado"
+      : selectedCourseAlreadyAdded
+        ? "Agregado"
+        : selectedCourseLimitReached
+          ? "Cupo lleno"
+          : "Agregar";
   const creditTotal = profile.courses.reduce(
     (total, course) => total + (course.credits ?? 0),
     0,
@@ -1871,14 +1981,14 @@ function DocenteView({
                 </Badge>
               ) : null}
               <Select
-                disabled={periodClosed}
+                disabled={isLocked}
                 value={profile.contract}
                 onValueChange={handleContractChange}
               >
                 <SelectTrigger className="w-[190px] max-w-[calc(100vw-160px)]">
-                  <span className="truncate">
+                  <SelectValue placeholder="Clase docente">
                     {contractRules[profile.contract].label}
-                  </span>
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -1892,14 +2002,26 @@ function DocenteView({
                 </SelectContent>
               </Select>
               <ToolbarSeparator orientation="vertical" />
-              <ToolbarButton
-                disabled={saving || periodClosed || !validation.complete}
-                onClick={handleSubmit}
-                render={<Button />}
-              >
-                <Send data-icon="inline-start" />
-                Enviar
-              </ToolbarButton>
+              {profile.status === "enviado" || profile.status === "aprobado" ? (
+                <ToolbarButton
+                  disabled={saving || periodClosed}
+                  onClick={handleRequestReopen}
+                  render={<Button variant="outline" />}
+                >
+                  Solicitar modificación
+                </ToolbarButton>
+              ) : profile.status === "solicitud_reapertura" ? (
+                <Badge variant="secondary">Reapertura pendiente</Badge>
+              ) : (
+                <ToolbarButton
+                  disabled={saving || periodClosed || !validation.complete}
+                  onClick={handleSubmit}
+                  render={<Button />}
+                >
+                  <Send data-icon="inline-start" />
+                  Enviar
+                </ToolbarButton>
+              )}
             </ToolbarGroup>
           </Toolbar>
         </CardHeader>
@@ -1907,7 +2029,7 @@ function DocenteView({
         <CardContent className="min-h-0 flex-1 p-0">
           <ScheduleBoard
             availability={profile.availability}
-            interactive={!periodClosed}
+            interactive={!isLocked}
             onToggleSlot={handleToggleSlot}
           />
         </CardContent>
@@ -1923,6 +2045,7 @@ function DocenteView({
           </Alert>
         ) : null}
         <CoursesEditorCard
+          catalog={catalog}
           catalogForSchool={catalogForSchool}
           addCourseDisabled={addCourseDisabled}
           addCourseLabel={addCourseLabel}
@@ -1931,7 +2054,7 @@ function DocenteView({
           courseProgress={`${validation.countedCourses}/${contractRules[profile.contract].maxCourses}`}
           courseSaving={courseSaving}
           courses={profile.courses}
-          disabled={periodClosed}
+          disabled={isLocked}
           handleAddCourse={handleAddCourse}
           handleRemoveCourse={handleRemoveCourse}
           school={school}
@@ -1940,6 +2063,7 @@ function DocenteView({
           setSchool={setSchool}
         />
         <TeacherStatusPanel
+          onRequestReopen={handleRequestReopen}
           onSubmit={handleSubmit}
           periodClosed={periodClosed}
           profile={profile}
@@ -2030,6 +2154,7 @@ function DocenteRuleStrip({
 function CoursesEditorCard({
   addCourseDisabled,
   addCourseLabel,
+  catalog = [],
   catalogForSchool,
   courseId,
   creditProgress,
@@ -2046,6 +2171,7 @@ function CoursesEditorCard({
 }: {
   addCourseDisabled: boolean;
   addCourseLabel: string;
+  catalog?: Course[];
   catalogForSchool: Course[];
   courseId: string;
   creditProgress?: string;
@@ -2060,8 +2186,21 @@ function CoursesEditorCard({
   setCourseId: (id: string) => void;
   setSchool: (school: string) => void;
 }) {
-  const selectedCourse = catalogForSchool.find(
-    (course) => course.id === courseId,
+  const [curriculum, setCurriculum] = useState<string>("all");
+  const availableCurricula = useMemo(
+    () =>
+      curriculaForSchool(catalog.length ? catalog : catalogForSchool, school),
+    [catalog, catalogForSchool, school],
+  );
+
+  const catalogForSchoolAndPlan = useMemo(
+    () =>
+      visibleCoursesForSchoolAndCurriculum(
+        catalog.length ? catalog : catalogForSchool,
+        school,
+        curriculum,
+      ),
+    [catalog, catalogForSchool, school, curriculum],
   );
 
   return (
@@ -2086,38 +2225,65 @@ function CoursesEditorCard({
       </CardHeader>
       <CardContent className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-1.5 px-2 py-1.5">
         <div className="grid gap-1.5">
-          <Select disabled={disabled} value={school} onValueChange={setSchool}>
-            <SelectTrigger className="w-full" size="sm">
-              <span className="truncate">{school}</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>Escuela Profesional</SelectLabel>
-                {schools.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <div className="grid grid-cols-2 gap-1.5">
             <Select
               disabled={disabled}
+              value={school}
+              onValueChange={(value) => {
+                setSchool(value);
+                setCurriculum("all");
+              }}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue placeholder="Escuela" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Escuela Profesional</SelectLabel>
+                  {schools.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              disabled={disabled || availableCurricula.length === 0}
+              value={curriculum}
+              onValueChange={setCurriculum}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue placeholder="Plan de estudios" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Plan de estudios</SelectLabel>
+                  <SelectItem value="all">Todos los planes</SelectItem>
+                  {availableCurricula.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      Plan {item}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <Select
+              disabled={disabled || catalogForSchoolAndPlan.length === 0}
               value={courseId}
               onValueChange={setCourseId}
             >
               <SelectTrigger className="w-full" size="sm">
-                <span className="truncate">
-                  {selectedCourse ? courseLabel(selectedCourse) : "Curso"}
-                </span>
+                <SelectValue placeholder="Curso" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   <SelectLabel>Curso</SelectLabel>
-                  {catalogForSchool.map((course) => (
+                  {catalogForSchoolAndPlan.map((course) => (
                     <SelectItem key={course.id} value={course.id}>
-                      {courseLabel(course)}
+                      <span className="truncate">{courseLabel(course)}</span>
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -3162,12 +3328,14 @@ function AuditEventsTable({ events }: { events: ScheduleEvent[] }) {
 }
 
 function TeacherStatusPanel({
+  onRequestReopen,
   onSubmit,
   periodClosed,
   profile,
   saving,
   validation,
 }: {
+  onRequestReopen?: () => void;
   onSubmit: () => void;
   periodClosed: boolean;
   profile: TeacherProfile;
@@ -3199,6 +3367,16 @@ function TeacherStatusPanel({
         </div>
       </CardHeader>
       <CardContent className="grid gap-2 px-2.5 py-2 text-sm">
+        {profile.status === "solicitud_reapertura" ? (
+          <Alert variant="warning" className="p-2.5">
+            <AlertCircle />
+            <AlertTitle>Solicitud de reapertura enviada</AlertTitle>
+            <AlertDescription>
+              Has solicitado reabrir tu disponibilidad para edición. Espera la
+              autorización de Dirección.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {profile.reviewNote ? (
           <Alert variant="warning" className="p-2.5">
             <AlertCircle />
@@ -3228,14 +3406,28 @@ function TeacherStatusPanel({
                 ? `Último envío: ${profile.submittedAt}`
                 : "Sin envío registrado"}
           </span>
-          <Button
-            size="sm"
-            disabled={periodClosed || !validation.complete}
-            loading={saving}
-            onClick={onSubmit}
-          >
-            Enviar
-          </Button>
+          {profile.status === "enviado" || profile.status === "aprobado" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={periodClosed}
+              loading={saving}
+              onClick={onRequestReopen}
+            >
+              Solicitar modificación
+            </Button>
+          ) : profile.status === "solicitud_reapertura" ? (
+            <Badge variant="secondary">Reapertura pendiente</Badge>
+          ) : (
+            <Button
+              size="sm"
+              disabled={periodClosed || !validation.complete}
+              loading={saving}
+              onClick={onSubmit}
+            >
+              Enviar
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -3254,9 +3446,12 @@ function StatusMetric({ label, value }: { label: string; value: string }) {
 function DirectorView({
   catalog,
   courseSavingIds,
+  departmentFilter,
+  departments,
   events,
   exportTeacherCount,
   handleApproveTeacher,
+  handleAuthorizeReopen,
   handleAssignTeacherCourse,
   handleExportAllPdf,
   handleExportPdf,
@@ -3270,6 +3465,7 @@ function DirectorView({
   selectedTeacherVisible,
   saving,
   schools,
+  setDepartmentFilter,
   setReviewNote,
   setSelectedTeacherId,
   setShowOnlyPending,
@@ -3285,9 +3481,12 @@ function DirectorView({
 }: {
   catalog: Course[];
   courseSavingIds: string[];
+  departmentFilter: string;
+  departments: string[];
   events: ScheduleEvent[];
   exportTeacherCount: number;
   handleApproveTeacher: () => Promise<void>;
+  handleAuthorizeReopen: (teacherId: string) => Promise<void>;
   handleAssignTeacherCourse: (
     teacherId: string,
     courseId: string,
@@ -3307,6 +3506,7 @@ function DirectorView({
   selectedTeacherVisible: boolean;
   saving: boolean;
   schools: string[];
+  setDepartmentFilter: (value: string) => void;
   setReviewNote: (note: string) => void;
   setSelectedTeacherId: (id: string) => void;
   setShowOnlyPending: (value: boolean) => void;
@@ -3323,6 +3523,7 @@ function DirectorView({
   const teacherFiltersActive =
     showOnlyPending ||
     teacherStatusFilter !== "all" ||
+    departmentFilter !== "all" ||
     teacherQuery.trim().length > 0;
   const selectedTeacherUnavailable = !selectedTeacherVisible;
 
@@ -3353,6 +3554,30 @@ function DirectorView({
               value={teacherQuery}
             />
             <Select
+              value={departmentFilter}
+              onValueChange={setDepartmentFilter}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue placeholder="Departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Departamento</SelectLabel>
+                  <SelectItem value="all">Todos los departamentos</SelectItem>
+                  {departments
+                    .filter((dept) => dept !== "Sin departamento")
+                    .map((dept) => (
+                      <SelectItem key={dept} value={dept}>
+                        {dept}
+                      </SelectItem>
+                    ))}
+                  <SelectItem value="sin_departamento">
+                    Sin departamento
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
               value={teacherStatusFilter}
               onValueChange={(value) =>
                 setTeacherStatusFilter(value as TeacherStatusFilter)
@@ -3367,6 +3592,9 @@ function DirectorView({
                   <SelectItem value="all">Todos los estados</SelectItem>
                   <SelectItem value="borrador">Borrador</SelectItem>
                   <SelectItem value="enviado">Enviado</SelectItem>
+                  <SelectItem value="solicitud_reapertura">
+                    Solicitud de reapertura
+                  </SelectItem>
                   <SelectItem value="observado">Observado</SelectItem>
                   <SelectItem value="aprobado">Aprobado</SelectItem>
                 </SelectGroup>
@@ -3425,6 +3653,7 @@ function DirectorView({
                         onClick={() => {
                           setTeacherQuery("");
                           setTeacherStatusFilter("all");
+                          setDepartmentFilter("all");
                           setShowOnlyPending(false);
                         }}
                         size="sm"
@@ -3465,6 +3694,7 @@ function DirectorView({
                     onClick={() => {
                       setTeacherQuery("");
                       setTeacherStatusFilter("all");
+                      setDepartmentFilter("all");
                       setShowOnlyPending(false);
                     }}
                     variant="outline"
@@ -3509,6 +3739,7 @@ function DirectorView({
                           events={events}
                           catalog={catalog}
                           onApproveTeacher={handleApproveTeacher}
+                          onAuthorizeReopen={handleAuthorizeReopen}
                           onAssignTeacherCourse={handleAssignTeacherCourse}
                           onObserveTeacher={handleObserveTeacher}
                           onUnassignTeacherCourse={handleUnassignTeacherCourse}
@@ -3568,6 +3799,7 @@ function DirectorView({
             events={events}
             catalog={catalog}
             onApproveTeacher={handleApproveTeacher}
+            onAuthorizeReopen={handleAuthorizeReopen}
             onAssignTeacherCourse={handleAssignTeacherCourse}
             onObserveTeacher={handleObserveTeacher}
             onUnassignTeacherCourse={handleUnassignTeacherCourse}
@@ -3599,6 +3831,11 @@ function TeacherQueueMetrics({
   }> = [
     { label: "Borrador", value: counts.borrador, tone: "secondary" },
     { label: "Enviado", value: counts.enviado, tone: "default" },
+    {
+      label: "Reapertura",
+      value: counts.solicitud_reapertura,
+      tone: "secondary",
+    },
     { label: "Obs.", value: counts.observado, tone: "secondary" },
     { label: "Aprob.", value: counts.aprobado, tone: "default" },
   ];
@@ -3697,6 +3934,7 @@ function DirectorDetailTabs({
   catalog,
   events,
   onApproveTeacher,
+  onAuthorizeReopen,
   onAssignTeacherCourse,
   onObserveTeacher,
   onUnassignTeacherCourse,
@@ -3711,6 +3949,7 @@ function DirectorDetailTabs({
   catalog: Course[];
   events: ScheduleEvent[];
   onApproveTeacher: () => Promise<void>;
+  onAuthorizeReopen: (teacherId: string) => Promise<void>;
   onAssignTeacherCourse: (
     teacherId: string,
     courseId: string,
@@ -3742,6 +3981,7 @@ function DirectorDetailTabs({
         <RulePanel profile={selectedTeacher} validation={validation} />
         <DirectorReviewCard
           onApproveTeacher={onApproveTeacher}
+          onAuthorizeReopen={onAuthorizeReopen}
           onObserveTeacher={onObserveTeacher}
           periodClosed={periodClosed}
           reviewNote={reviewNote}
@@ -3803,9 +4043,25 @@ function CoursesReviewCard({
   );
   const defaultSchool = teacher.courses[0]?.school ?? catalogSchools[0] ?? "";
   const [school, setSchool] = useState(defaultSchool);
-  const visibleCatalog = useMemo(
-    () => visibleCoursesForSchool(catalog, school),
+  const availableCurricula = useMemo(
+    () => curriculaForSchool(catalog, school),
     [catalog, school],
+  );
+  const [curriculum, setCurriculum] = useState(
+    () => availableCurricula[0] ?? "",
+  );
+  useEffect(() => {
+    if (
+      availableCurricula.length > 0 &&
+      !availableCurricula.includes(curriculum)
+    ) {
+      setCurriculum(availableCurricula[0]);
+    }
+  }, [availableCurricula, curriculum]);
+
+  const visibleCatalog = useMemo(
+    () => visibleCoursesForSchoolAndCurriculum(catalog, school, curriculum),
+    [catalog, school, curriculum],
   );
   const [courseId, setCourseId] = useState(visibleCatalog[0]?.id ?? "");
   const selectedCourse = visibleCatalog.find(
@@ -3869,6 +4125,27 @@ function CoursesReviewCard({
               </SelectGroup>
             </SelectContent>
           </Select>
+          {availableCurricula.length > 0 ? (
+            <Select
+              disabled={disabled || saving}
+              value={curriculum}
+              onValueChange={setCurriculum}
+            >
+              <SelectTrigger className="w-full" size="sm">
+                <SelectValue placeholder="Plan de estudios" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Plan de estudios</SelectLabel>
+                  {availableCurricula.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : null}
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
             <Select
               disabled={disabled || saving || !visibleCatalog.length}
@@ -3926,6 +4203,7 @@ function CoursesReviewCard({
 
 function DirectorReviewCard({
   onApproveTeacher,
+  onAuthorizeReopen,
   onObserveTeacher,
   periodClosed,
   reviewNote,
@@ -3935,6 +4213,7 @@ function DirectorReviewCard({
   validation,
 }: {
   onApproveTeacher: () => Promise<void>;
+  onAuthorizeReopen: (teacherId: string) => Promise<void>;
   onObserveTeacher: () => Promise<void>;
   periodClosed: boolean;
   reviewNote: string;
@@ -3948,6 +4227,11 @@ function DirectorReviewCard({
     selectedTeacher.status === "enviado" &&
     validation.complete;
   const canObserve = !periodClosed && selectedTeacher.status !== "borrador";
+  const canReopen =
+    !periodClosed &&
+    (selectedTeacher.status === "solicitud_reapertura" ||
+      selectedTeacher.status === "enviado" ||
+      selectedTeacher.status === "aprobado");
 
   return (
     <Card className="overflow-hidden">
@@ -3958,6 +4242,16 @@ function DirectorReviewCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-2 px-3 py-2">
+        {selectedTeacher.status === "solicitud_reapertura" ? (
+          <Alert variant="warning" className="p-2.5">
+            <AlertCircle />
+            <AlertTitle>Solicitud de reapertura de horario</AlertTitle>
+            <AlertDescription>
+              El docente ha solicitado reabrir su disponibilidad para realizar
+              modificaciones.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {selectedTeacher.approvedAt ? (
           <Alert variant="success" className="p-2.5">
             <ShieldCheck />
@@ -3997,6 +4291,18 @@ function DirectorReviewCard({
             Aprobar
           </Button>
         </div>
+        {canReopen ? (
+          <Button
+            disabled={periodClosed || saving}
+            loading={saving}
+            onClick={() => onAuthorizeReopen(selectedTeacher.id)}
+            variant="secondary"
+            className="w-full"
+          >
+            <Unlock data-icon="inline-start" />
+            Autorizar reapertura / edición
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -4450,20 +4756,28 @@ function countTeachersByStatus(
 ): TeacherStatusCounts {
   return teachers.reduce<TeacherStatusCounts>(
     (counts, teacher) => {
-      counts[teacher.status] += 1;
+      counts[teacher.status] = (counts[teacher.status] ?? 0) + 1;
       return counts;
     },
-    { aprobado: 0, borrador: 0, enviado: 0, observado: 0 },
+    {
+      aprobado: 0,
+      borrador: 0,
+      enviado: 0,
+      observado: 0,
+      solicitud_reapertura: 0,
+    },
   );
 }
 
 function filterTeachers(
   teachers: TeacherProfile[],
   {
+    departmentFilter,
     query,
     showOnlyPending,
     statusFilter,
   }: {
+    departmentFilter?: string;
     query: string;
     showOnlyPending: boolean;
     statusFilter: TeacherStatusFilter;
@@ -4471,6 +4785,16 @@ function filterTeachers(
 ) {
   const normalizedQuery = query.trim().toLowerCase();
   return teachers.filter((teacher) => {
+    if (departmentFilter && departmentFilter !== "all") {
+      const teacherDept = normalizeDepartment(teacher.department);
+      if (departmentFilter === "sin_departamento") {
+        if (teacherDept !== "Sin departamento") {
+          return false;
+        }
+      } else if (teacherDept !== normalizeDepartment(departmentFilter)) {
+        return false;
+      }
+    }
     if (showOnlyPending && teacher.status === "aprobado") {
       return false;
     }
@@ -4580,7 +4904,13 @@ function filterCourses(
 }
 
 function courseLabel(course: Course) {
-  return course.code ? `${course.code} · ${course.name}` : course.name;
+  const parts = [
+    course.code,
+    course.name,
+    course.cycle ? `Ciclo ${course.cycle}` : null,
+    course.credits ? `${course.credits} cr.` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
 
 function courseMeta(course: Course) {
@@ -4618,6 +4948,9 @@ function statusLabel(status: TeacherProfile["status"]) {
   }
   if (status === "enviado") {
     return "Enviado";
+  }
+  if (status === "solicitud_reapertura") {
+    return "Solicitud de reapertura";
   }
   if (status === "observado") {
     return "Observado";

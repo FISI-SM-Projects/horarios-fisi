@@ -30,7 +30,12 @@ export type TeacherProfile = {
   academicDegree?: string;
   department?: string;
   contract: ContractKey;
-  status: "enviado" | "borrador" | "observado" | "aprobado";
+  status:
+    | "enviado"
+    | "borrador"
+    | "observado"
+    | "aprobado"
+    | "solicitud_reapertura";
   courses: Course[];
   availability: string[];
   reviewNote?: string;
@@ -96,11 +101,10 @@ export const contractRules: Record<
 };
 
 export const schools = [
-  "Ing. de Sistemas",
-  "Contabilidad",
-  "Medicina Humana",
-  "Administración",
-  "Educación",
+  "Ingeniería de Sistemas",
+  "Ingeniería de Software",
+  "Ciencias de la Computación",
+  "Ingeniería de Inteligencia Artificial",
 ];
 
 export const departments = [

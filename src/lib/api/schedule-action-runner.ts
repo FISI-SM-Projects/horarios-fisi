@@ -7,11 +7,13 @@ import {
   addCourse,
   approveSchedule,
   assignTeacherCourse,
+  authorizeScheduleReopen,
   completeOnboarding,
   createCourse,
   importTeacherCourses,
   observeSchedule,
   removeCourse,
+  requestScheduleReopen,
   setAcademicTerm,
   setAvailability,
   setContract,
@@ -166,6 +168,15 @@ async function runAction(
       csv: body.csv,
       replaceTeachers: Boolean(body.replaceTeachers),
     });
+  }
+  if (body.action === "requestReopen") {
+    return requestScheduleReopen(identity);
+  }
+  if (body.action === "authorizeReopen") {
+    if (typeof body.teacherId !== "string") {
+      throw new ScheduleError("Docente no válido.", 400);
+    }
+    return authorizeScheduleReopen(identity, body.teacherId);
   }
   if (body.action === "submit") {
     return submitSchedule(identity);
