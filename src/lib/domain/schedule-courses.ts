@@ -3,6 +3,7 @@ import type { Course } from "@/lib/domain/schedule-data";
 export function normalizeSchoolName(school: string) {
   const normalized = school.trim().toLowerCase();
   if (
+    normalized === "epis" ||
     normalized === "ing. de sistemas" ||
     normalized === "ingeniería de sistemas" ||
     normalized === "ingenieria de sistemas"
@@ -10,6 +11,7 @@ export function normalizeSchoolName(school: string) {
     return "Ingeniería de Sistemas";
   }
   if (
+    normalized === "episw" ||
     normalized === "ing. de software" ||
     normalized === "ingeniería de software" ||
     normalized === "ingenieria de software"
@@ -17,6 +19,7 @@ export function normalizeSchoolName(school: string) {
     return "Ingeniería de Software";
   }
   if (
+    normalized === "epcc" ||
     normalized === "ciencias de la computación" ||
     normalized === "ciencias de la computacion" ||
     normalized === "cc"
@@ -24,6 +27,7 @@ export function normalizeSchoolName(school: string) {
     return "Ciencias de la Computación";
   }
   if (
+    normalized === "epia" ||
     normalized === "ingeniería de inteligencia artificial" ||
     normalized === "ingenieria de inteligencia artificial" ||
     normalized === "inteligencia artificial" ||

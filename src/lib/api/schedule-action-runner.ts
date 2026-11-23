@@ -47,16 +47,22 @@ async function runAction(
   body: Record<string, unknown>,
 ): Promise<ScheduleActionData> {
   if (body.action === "completeOnboarding") {
+    const departmentOrSchool =
+      typeof body.department === "string"
+        ? body.department
+        : typeof body.school === "string"
+          ? body.school
+          : "";
     if (
       !isAppRole(body.role) ||
-      typeof body.school !== "string" ||
+      !departmentOrSchool ||
       typeof body.code !== "string"
     ) {
       throw new ScheduleError("Perfil no válido.", 400);
     }
     return completeOnboarding(identity, {
       role: body.role,
-      school: body.school,
+      school: departmentOrSchool,
       code: body.code,
     });
   }
@@ -139,10 +145,16 @@ async function runAction(
     return setAcademicTerm(identity, body.academicTerm);
   }
   if (body.action === "setUserAccess") {
+    const departmentOrSchool =
+      typeof body.department === "string"
+        ? body.department
+        : typeof body.school === "string"
+          ? body.school
+          : "";
     if (
       typeof body.userId !== "string" ||
       !isAppRole(body.role) ||
-      typeof body.school !== "string"
+      !departmentOrSchool
     ) {
       throw new ScheduleError("Usuario no válido.", 400);
     }
@@ -151,10 +163,10 @@ async function runAction(
         identity,
         body.userId,
         body.role,
-        body.school,
+        departmentOrSchool,
       );
     }
-    return setUserAccess(identity, body.userId, body.role, body.school);
+    return setUserAccess(identity, body.userId, body.role, departmentOrSchool);
   }
   if (body.action === "setPeriodClosed") {
     return setPeriodClosed(identity, Boolean(body.closed));

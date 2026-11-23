@@ -100,6 +100,9 @@ export const contractRules: Record<
   },
 };
 
+export type DepartmentCode = "SW" | "CC" | "NA";
+export type SchoolCode = "EPIS" | "EPISW" | "EPCC" | "EPIA";
+
 export const schools = [
   "Ingeniería de Sistemas",
   "Ingeniería de Software",
@@ -107,32 +110,25 @@ export const schools = [
   "Ingeniería de Inteligencia Artificial",
 ];
 
-export const departments = [
-  "Ciencias de la Computación",
-  "Ingeniería de Software",
-  "Estudios Generales",
-  "Ingeniería de Sistemas",
-  "Sin departamento",
+export const schoolCatalog: { code: SchoolCode; name: string }[] = [
+  { code: "EPIS", name: "Ingeniería de Sistemas" },
+  { code: "EPISW", name: "Ingeniería de Software" },
+  { code: "EPCC", name: "Ciencias de la Computación" },
+  { code: "EPIA", name: "Ingeniería de Inteligencia Artificial" },
 ];
 
-const departmentLabels: Record<string, string> = {
-  CC: "Ciencias de la Computación",
-  "CIENCIAS DE LA COMPUTACION": "Ciencias de la Computación",
+export const departments: DepartmentCode[] = ["SW", "CC", "NA"];
+
+export const departmentLabels: Record<DepartmentCode, string> = {
   SW: "Ingeniería de Software",
-  "ING DE SOFTWARE": "Ingeniería de Software",
-  "INGENIERIA DE SOFTWARE": "Ingeniería de Software",
-  EG: "Estudios Generales",
-  "ESTUDIOS GENERALES": "Estudios Generales",
-  SI: "Ingeniería de Sistemas",
-  "ING DE SISTEMAS": "Ingeniería de Sistemas",
-  "INGENIERIA DE SISTEMAS": "Ingeniería de Sistemas",
-  "SIN DEPARTAMENTO": "Sin departamento",
+  CC: "Ciencias de la Computación",
+  NA: "No aplica",
 };
 
-export function normalizeDepartment(value?: string | null) {
+export function normalizeDepartment(value?: string | null): DepartmentCode {
   const raw = String(value ?? "").trim();
   if (!raw) {
-    return "Sin departamento";
+    return "NA";
   }
   const key = raw
     .normalize("NFD")
@@ -140,7 +136,19 @@ export function normalizeDepartment(value?: string | null) {
     .replace(/\./g, "")
     .replace(/\s+/g, " ")
     .toLocaleUpperCase("es-PE");
-  return departmentLabels[key] ?? raw;
+
+  if (key === "SW" || key.includes("SOFTWARE")) {
+    return "SW";
+  }
+  if (key === "CC" || key.includes("COMPUTACION")) {
+    return "CC";
+  }
+  return "NA";
+}
+
+export function formatDepartmentLabel(department?: string | null): string {
+  const code = normalizeDepartment(department);
+  return departmentLabels[code] ?? "No aplica";
 }
 
 export const courseCatalog: Course[] = [

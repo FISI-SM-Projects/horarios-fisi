@@ -41,15 +41,13 @@ import { ScheduleError } from "@/lib/domain/types";
 
 type AppUserRow = {
   ldap_uid: string;
-  auth_user_id?: number | null;
-  auth_account_id?: number | null;
   email: string;
   image_url: string | null;
   name: string;
   role: AppRole;
-  institutional_roles?: string[] | null;
   account_status?: string | null;
-  school: string;
+  department: string;
+  school?: string;
   code: string;
   last_seen_at?: string | null;
   teacher_code?: string | null;
@@ -250,21 +248,27 @@ export async function ensureScheduleSchema() {
       ) then
         alter table teacher_profiles rename column clerk_user_id to ldap_uid;
       end if;
+      if exists (
+        select 1 from information_schema.columns 
+        where table_name = 'app_users' and column_name = 'school'
+      ) and not exists (
+        select 1 from information_schema.columns 
+        where table_name = 'app_users' and column_name = 'department'
+      ) then
+        alter table app_users rename column school to department;
+      end if;
     end $$;
   `);
   await sql.query(`
     create table if not exists app_users (
       ldap_uid text primary key,
-      auth_user_id bigint,
-      auth_account_id bigint,
       code text not null default '',
       email text not null,
       name text not null,
       image_url text not null default '',
       role text not null default 'docente' check (role in ('docente', 'direccion', 'admin')),
-      institutional_roles text[] not null default '{}',
       account_status text not null default 'ACTIVO',
-      school text not null default 'Sin departamento',
+      department text not null default 'NA',
       last_seen_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -365,26 +369,43 @@ export async function ensureScheduleSchema() {
   await sql.query(
     "alter table app_users add column if not exists last_seen_at timestamptz",
   );
+  await sql.query("alter table app_users drop column if exists auth_user_id");
   await sql.query(
-    "alter table app_users add column if not exists auth_user_id bigint",
+    "alter table app_users drop column if exists auth_account_id",
   );
   await sql.query(
-    "alter table app_users add column if not exists auth_account_id bigint",
+    "alter table app_users drop column if exists institutional_roles",
   );
-  await sql.query(
-    "alter table app_users add column if not exists institutional_roles text[] not null default '{}'",
-  );
+  await sql.query("alter table app_users drop column if exists school");
   await sql.query(
     "alter table app_users add column if not exists account_status text not null default 'ACTIVO'",
   );
   await sql.query(
-    "alter table app_users alter column school set default 'Sin departamento'",
+    "alter table app_users add column if not exists department text not null default 'NA'",
+  );
+  await sql.query(
+    "alter table app_users alter column department set default 'NA'",
   );
   await sql.query(
     "alter table app_users drop constraint if exists app_users_role_check",
   );
   await sql.query(
     "alter table app_users add constraint app_users_role_check check (role in ('docente', 'direccion', 'admin'))",
+  );
+  await sql.query(`
+    update app_users
+    set department = case
+      when role in ('admin', 'direccion') then 'NA'
+      when department in ('SW', 'Ingeniería de Software') then 'SW'
+      when department in ('CC', 'Ciencias de la Computación') then 'CC'
+      else 'NA'
+    end
+  `);
+  await sql.query(
+    "alter table app_users drop constraint if exists app_users_department_check",
+  );
+  await sql.query(
+    "alter table app_users add constraint app_users_department_check check (department in ('SW', 'CC', 'NA'))",
   );
   await sql.query(
     "alter table teacher_profiles add column if not exists approved_at text",
@@ -401,6 +422,50 @@ export async function ensureScheduleSchema() {
   await sql.query(
     "alter table teacher_profiles add column if not exists department text",
   );
+  await sql.query(`
+    update teacher_profiles
+    set department = case
+      when department in ('SW', 'Ingeniería de Software') then 'SW'
+      when department in ('CC', 'Ciencias de la Computación') then 'CC'
+      when department in ('NA', 'Sin departamento', 'Ing. de Sistemas', '') then null
+      else department
+    end
+  `);
+  await sql.query(
+    "alter table teacher_profiles drop constraint if exists teacher_profiles_department_check",
+  );
+  await sql.query(
+    "alter table teacher_profiles add constraint teacher_profiles_department_check check (department in ('SW', 'CC', 'NA') or department is null)",
+  );
+  await sql.query(`
+    update teacher_profiles tp
+    set teacher_code = au.code
+    from app_users au
+    where tp.ldap_uid = au.ldap_uid
+      and au.code <> ''
+      and (tp.teacher_code is null or tp.teacher_code = '');
+
+    update app_users au
+    set code = tp.teacher_code
+    from teacher_profiles tp
+    where au.ldap_uid = tp.ldap_uid
+      and tp.teacher_code is not null and tp.teacher_code <> ''
+      and (au.code = '' or au.code is null);
+
+    update teacher_profiles tp
+    set department = au.department
+    from app_users au
+    where tp.ldap_uid = au.ldap_uid
+      and au.department in ('SW', 'CC')
+      and (tp.department is null or tp.department <> au.department);
+
+    update app_users au
+    set department = tp.department
+    from teacher_profiles tp
+    where au.ldap_uid = tp.ldap_uid
+      and tp.department in ('SW', 'CC')
+      and (au.department = 'NA' or au.department is null);
+  `);
   await sql.query(
     "alter table teacher_profiles drop constraint if exists teacher_profiles_status_check",
   );
@@ -441,7 +506,7 @@ export async function verifyScheduleSchema() {
       select column_name
       from information_schema.columns
       where table_name = 'teacher_profiles'
-        and column_name in ('approved_at', 'department', 'review_note', 'submitted_at', 'ldap_uid')
+        and column_name in ('approved_at', 'department', 'review_note', 'submitted_at', 'ldap_uid', 'teacher_code')
       order by column_name
     `,
   )) as { column_name: string }[];
@@ -450,7 +515,7 @@ export async function verifyScheduleSchema() {
       select column_name
       from information_schema.columns
       where table_name = 'app_users'
-        and column_name in ('image_url', 'last_seen_at', 'ldap_uid', 'auth_user_id', 'institutional_roles', 'account_status')
+        and column_name in ('image_url', 'last_seen_at', 'ldap_uid', 'account_status', 'department')
       order by column_name
     `,
   )) as { column_name: string }[];
@@ -496,11 +561,10 @@ export async function verifyScheduleSchema() {
     appUsersImageUrlColumn: appUserColumnNames.has("image_url"),
     appUsersLastSeenAtColumn: appUserColumnNames.has("last_seen_at"),
     appUsersLdapUidColumn: appUserColumnNames.has("ldap_uid"),
-    appUsersAuthFields:
-      appUserColumnNames.has("auth_user_id") &&
-      appUserColumnNames.has("institutional_roles") &&
-      appUserColumnNames.has("account_status"),
+    appUsersDepartmentColumn: appUserColumnNames.has("department"),
+    appUsersAccountStatusColumn: appUserColumnNames.has("account_status"),
     teacherProfilesLdapUidColumn: teacherColumnNames.has("ldap_uid"),
+    teacherProfilesTeacherCodeColumn: teacherColumnNames.has("teacher_code"),
     approvedAtColumn: teacherColumnNames.has("approved_at"),
     departmentColumn: teacherColumnNames.has("department"),
     reviewNoteColumn: teacherColumnNames.has("review_note"),
@@ -657,7 +721,7 @@ export async function getSchedulePayload(
     events,
     onboarding: {
       role: user.role,
-      school: normalizeDepartment(user.school),
+      school: normalizeDepartment(user.department),
       code: user.code,
       complete: user.code.trim().length > 0 || canUseDirection,
     },
@@ -682,14 +746,26 @@ export async function completeOnboarding(
   await sql.query(
     `
       update app_users
-      set role = $2, school = $3, code = $4, updated_at = now()
+      set role = $2, department = $3, code = $4, updated_at = now()
       where ldap_uid = $1
     `,
     [userId, validated.role, validated.school, validated.code],
   );
+  if (validated.role === "docente") {
+    await sql.query(
+      `
+        update teacher_profiles
+        set department = case when $2 in ('SW', 'CC') then $2 else department end,
+            teacher_code = case when $3 <> '' then $3 else teacher_code end,
+            updated_at = now()
+        where ldap_uid = $1
+      `,
+      [userId, validated.school, validated.code],
+    );
+  }
   await recordEvent(identity, userId, "onboarding.completed", {
     role: validated.role,
-    school: validated.school,
+    department: validated.school,
   });
   return getSchedulePayload(identity);
 }
@@ -706,16 +782,18 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
     `,
     [input.email],
   )) as { teacher_code: string | null; department: string | null }[];
-  const teacherCode = officialRows[0]?.teacher_code?.trim() ?? input.code ?? "";
-  const teacherDepartment = normalizeDepartment(
-    officialRows[0]?.department ?? input.school,
-  );
+  const teacherCode =
+    officialRows[0]?.teacher_code?.trim() || input.code?.trim() || "";
+  const rawDepartment = input.department ?? input.school;
+  const isAdministrative = input.role === "admin" || input.role === "direccion";
+  const teacherDepartment = isAdministrative
+    ? "NA"
+    : normalizeDepartment(officialRows[0]?.department ?? rawDepartment);
   const uid = input.ldapUid || input.clerkUserId || "";
   const rows = (await sql.query(
     `
       insert into app_users (
-        ldap_uid, email, name, image_url, role, school, code,
-        auth_user_id, auth_account_id, institutional_roles, account_status
+        ldap_uid, email, name, image_url, role, department, code, account_status
       )
       values (
         $1,
@@ -729,10 +807,7 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
           when $5::text = 'direccion' then 'DIRECCION'
           else $6
         end,
-        $8,
-        $9,
-        $10,
-        coalesce($11, 'ACTIVO')
+        coalesce($8, 'ACTIVO')
       )
       on conflict (ldap_uid) do update set
         email = excluded.email,
@@ -742,19 +817,14 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
           when $5::text is not null then excluded.role
           else app_users.role
         end,
-        school = case
-          when app_users.school in ('', 'Ing. de Sistemas', 'Sin departamento') then excluded.school
-          else app_users.school
+        department = case
+          when $5::text in ('admin', 'direccion') then 'NA'
+          when app_users.department in ('', 'Sin departamento', 'NA') and excluded.department <> 'NA' then excluded.department
+          else app_users.department
         end,
         code = case
           when app_users.code = '' and excluded.code <> '' then excluded.code
           else app_users.code
-        end,
-        auth_user_id = coalesce(excluded.auth_user_id, app_users.auth_user_id),
-        auth_account_id = coalesce(excluded.auth_account_id, app_users.auth_account_id),
-        institutional_roles = case
-          when array_length(excluded.institutional_roles, 1) > 0 then excluded.institutional_roles
-          else app_users.institutional_roles
         end,
         account_status = coalesce(excluded.account_status, app_users.account_status),
         updated_at = case
@@ -762,10 +832,7 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
             or app_users.name is distinct from excluded.name
             or app_users.image_url is distinct from excluded.image_url
             or ($5::text is not null and app_users.role is distinct from excluded.role)
-            or (
-              app_users.school in ('', 'Ing. de Sistemas', 'Sin departamento')
-              and app_users.school is distinct from excluded.school
-            )
+            or (app_users.department is distinct from excluded.department)
             or (app_users.code = '' and excluded.code <> '')
           then now()
           else app_users.updated_at
@@ -780,9 +847,6 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
       input.role ?? null,
       teacherCode,
       teacherDepartment,
-      input.authUserId ?? null,
-      input.authAccountId ?? null,
-      input.institutionalRoles ?? [],
       input.accountStatus ?? "ACTIVO",
     ],
   )) as { ldap_uid: string }[];
@@ -790,6 +854,14 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
     `
       update teacher_profiles
       set ldap_uid = $1,
+          department = case
+            when (department is null or department = '' or department = 'NA') and $3 in ('SW', 'CC') then $3
+            else department
+          end,
+          teacher_code = case
+            when (teacher_code is null or teacher_code = '') and $4 <> '' then $4
+            else teacher_code
+          end,
           updated_at = case
             when ldap_uid is distinct from $1 then now()
             else updated_at
@@ -797,7 +869,7 @@ export async function syncInstitutionalUser(input: InstitutionalUserSyncInput) {
       where lower(email) = lower($2)
         and (ldap_uid is null or ldap_uid = $1)
     `,
-    [uid, input.email],
+    [uid, input.email, teacherDepartment, teacherCode],
   );
   return { ldapUid: rows[0].ldap_uid, clerkUserId: rows[0].ldap_uid };
 }
@@ -1100,19 +1172,27 @@ export async function setUserAccess(
   identity: ScheduleIdentity,
   targetUserId: string,
   role: AppRole,
-  school: string,
+  departmentOrSchool: string,
 ) {
   if (identity.preview) {
     return getPreviewPayload(identity);
   }
-  await validateUserAccessChange(identity, targetUserId, role, school);
-  const normalizedSchool = normalizeDepartment(school);
+  await validateUserAccessChange(
+    identity,
+    targetUserId,
+    role,
+    departmentOrSchool,
+  );
+  const normalizedDepartment =
+    role === "admin" || role === "direccion"
+      ? "NA"
+      : normalizeDepartment(departmentOrSchool);
   const sql = getSql();
   await sql.query(
     `
       update app_users
       set role = $2,
-          school = $3,
+          department = $3,
           code = case
             when $2 = 'admin' and code = '' then 'ADMIN'
             when $2 = 'direccion' and code = '' then 'DIRECCION'
@@ -1121,11 +1201,22 @@ export async function setUserAccess(
           updated_at = now()
       where ldap_uid = $1
     `,
-    [targetUserId, role, normalizedSchool],
+    [targetUserId, role, normalizedDepartment],
   );
+  if (role === "docente") {
+    await sql.query(
+      `
+        update teacher_profiles
+        set department = case when $2 in ('SW', 'CC') then $2 else department end,
+            updated_at = now()
+        where ldap_uid = $1
+      `,
+      [targetUserId, normalizedDepartment],
+    );
+  }
   await recordEvent(identity, targetUserId, "access.user_updated", {
     role,
-    school: normalizedSchool,
+    department: normalizedDepartment,
   });
   return getSchedulePayload(identity);
 }
@@ -1134,15 +1225,18 @@ export async function validateUserAccessChange(
   identity: ScheduleIdentity,
   targetUserId: string,
   role: AppRole,
-  school: string,
+  departmentOrSchool: string,
 ) {
   if (identity.preview) {
     return;
   }
   await ensureAdmin(identity);
-  const normalizedSchool = normalizeDepartment(school);
-  const schoolOptions = await readDepartments();
-  if (!schoolOptions.includes(normalizedSchool)) {
+  const normalizedDepartment =
+    role === "admin" || role === "direccion"
+      ? "NA"
+      : normalizeDepartment(departmentOrSchool);
+  const departmentOptions = await readDepartments();
+  if (!departmentOptions.includes(normalizedDepartment)) {
     throw new ScheduleError("Departamento no válido.");
   }
   const currentUid = identity.ldapUid || identity.clerkUserId || "";
@@ -1902,9 +1996,8 @@ async function readUsers(): Promise<ScheduleUser[]> {
       au.image_url,
       au.name,
       au.role,
-      au.institutional_roles,
       au.account_status,
-      coalesce(nullif(tp.department, ''), au.school) as school,
+      coalesce(nullif(tp.department, ''), au.department) as department,
       au.code,
       au.last_seen_at::text,
       coalesce(tp.teacher_code, nullif(au.code, '')) as teacher_code,
@@ -1926,9 +2019,9 @@ async function readUsers(): Promise<ScheduleUser[]> {
     imageUrl: row.image_url || undefined,
     name: row.name,
     role: row.role,
-    institutionalRoles: row.institutional_roles ?? [],
     accountStatus: row.account_status ?? "ACTIVO",
-    school: normalizeDepartment(row.school),
+    department: normalizeDepartment(row.department),
+    school: normalizeDepartment(row.department),
     onboardingComplete: Boolean(row.last_seen_at),
     lastSeenAt: row.last_seen_at ?? undefined,
     teacherCode: row.teacher_code?.trim() || undefined,
@@ -2009,7 +2102,8 @@ function getPreviewPayload(identity: ScheduleIdentity): SchedulePayload {
         role: "admin",
         institutionalRoles: ["ADMIN"],
         accountStatus: "ACTIVO",
-        school: "Ing. de Sistemas",
+        department: "NA",
+        school: "NA",
         onboardingComplete: true,
         lastSeenAt: new Date().toISOString(),
         teacherCode: "PREVIEW",
@@ -2028,7 +2122,8 @@ function getPreviewPayload(identity: ScheduleIdentity): SchedulePayload {
         role: "docente",
         institutionalRoles: ["DOCENTE"],
         accountStatus: "ACTIVO",
-        school: "Ing. de Sistemas",
+        department: "SW",
+        school: "SW",
         onboardingComplete: true,
         lastSeenAt: new Date().toISOString(),
         teacherCode: seedTeachers[0].teacherCode,
@@ -2047,7 +2142,8 @@ function getPreviewPayload(identity: ScheduleIdentity): SchedulePayload {
         role: "docente",
         institutionalRoles: ["DOCENTE"],
         accountStatus: "ACTIVO",
-        school: "Contabilidad",
+        department: "CC",
+        school: "CC",
         onboardingComplete: true,
         lastSeenAt: new Date().toISOString(),
         teacherCode: seedTeachers[2].teacherCode,
@@ -2102,7 +2198,7 @@ async function ensureUser(identity: ScheduleIdentity) {
   const uid = identity.ldapUid || identity.clerkUserId || "";
   const rows = (await sql.query(
     `
-      insert into app_users (ldap_uid, email, name, image_url, role, code, institutional_roles, last_seen_at)
+      insert into app_users (ldap_uid, email, name, image_url, role, code, department, last_seen_at)
       values (
         $1,
         $2,
@@ -2114,7 +2210,10 @@ async function ensureUser(identity: ScheduleIdentity) {
           when $5::text = 'direccion' then 'DIRECCION'
           else ''
         end,
-        $6,
+        case
+          when $5::text in ('admin', 'direccion') then 'NA'
+          else 'NA'
+        end,
         now()
       )
       on conflict (ldap_uid) do update set
@@ -2126,13 +2225,13 @@ async function ensureUser(identity: ScheduleIdentity) {
           when $5::text is not null then excluded.role
           else app_users.role
         end,
-        institutional_roles = case
-          when array_length(excluded.institutional_roles, 1) > 0 then excluded.institutional_roles
-          else app_users.institutional_roles
-        end,
         code = case
           when app_users.code = '' and excluded.code <> '' then excluded.code
           else app_users.code
+        end,
+        department = case
+          when excluded.role in ('admin', 'direccion') then 'NA'
+          else app_users.department
         end,
         updated_at = case
           when app_users.email is distinct from excluded.email
@@ -2143,7 +2242,7 @@ async function ensureUser(identity: ScheduleIdentity) {
           then now()
           else app_users.updated_at
         end
-      returning ldap_uid, email, name, image_url, role, school, code
+      returning ldap_uid, email, name, image_url, role, department, code
     `,
     [
       uid,
@@ -2151,7 +2250,6 @@ async function ensureUser(identity: ScheduleIdentity) {
       identity.name,
       identity.imageUrl ?? "",
       identity.role ?? null,
-      identity.institutionalRoles ?? [],
     ],
   )) as AppUserRow[];
   return rows[0];
@@ -2214,27 +2312,45 @@ async function linkOfficialTeacherProfile(identity: ScheduleIdentity) {
   }[];
   const officialProfile = officialRows[0];
   if (officialProfile) {
+    const normDept = normalizeDepartment(officialProfile.department);
+    const teacherCode = officialProfile.teacher_code?.trim() ?? "";
     await sql.query(
       `
         update app_users
-        set school = $2,
+        set department = case
+              when $2 in ('SW', 'CC') then $2
+              else department
+            end,
             code = case
               when code = '' and $3 <> '' then $3
               else code
             end,
             updated_at = case
-              when school is distinct from $2
+              when (department is distinct from $2 and $2 in ('SW', 'CC'))
                 or (code = '' and $3 <> '')
               then now()
               else updated_at
             end
         where ldap_uid = $1
       `,
-      [
-        uid,
-        normalizeDepartment(officialProfile.department),
-        officialProfile.teacher_code?.trim() ?? "",
-      ],
+      [uid, normDept, teacherCode],
+    );
+    await sql.query(
+      `
+        update teacher_profiles tp
+        set teacher_code = case
+              when (tp.teacher_code is null or tp.teacher_code = '') and au.code <> '' then au.code
+              else tp.teacher_code
+            end,
+            department = case
+              when (tp.department is null or tp.department = '' or tp.department = 'NA') and au.department in ('SW', 'CC') then au.department
+              else tp.department
+            end,
+            updated_at = now()
+        from app_users au
+        where tp.id = $1 and au.ldap_uid = $2
+      `,
+      [officialProfile.id, uid],
     );
     return readTeacher(officialProfile.id);
   }
@@ -2246,7 +2362,7 @@ function administrativeProfile(user: AppUserRow): TeacherProfile {
     id: user.ldap_uid,
     name: user.name,
     email: user.email,
-    department: normalizeDepartment(user.school),
+    department: normalizeDepartment(user.department),
     contract: "full",
     status: "borrador",
     courses: [],

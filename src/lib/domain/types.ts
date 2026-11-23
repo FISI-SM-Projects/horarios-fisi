@@ -44,8 +44,8 @@ export type ScheduleUser = {
   imageUrl?: string;
   name: string;
   role: AppRole;
-  institutionalRoles?: string[];
   accountStatus?: string;
+  department: string;
   school: string;
   onboardingComplete: boolean;
   lastSeenAt?: string;
@@ -57,6 +57,8 @@ export type ScheduleUser = {
   createdAt: string;
   /** @deprecated use ldapUid */
   clerkUserId?: string;
+  /** @deprecated */
+  institutionalRoles?: string[];
 };
 
 export type SchedulePayload = {
@@ -82,14 +84,19 @@ export type InstitutionalUserSyncInput = {
   name: string;
   imageUrl?: string;
   role?: AppRole;
-  institutionalRoles?: string[];
-  accountStatus?: string;
-  authUserId?: number;
-  authAccountId?: number;
   code?: string;
+  department?: string;
+  /** @deprecated use department */
   school?: string;
+  accountStatus?: string;
   /** @deprecated use ldapUid */
   clerkUserId?: string;
+  /** @deprecated */
+  institutionalRoles?: string[];
+  /** @deprecated */
+  authUserId?: number;
+  /** @deprecated */
+  authAccountId?: number;
 };
 
 export type ClerkUserSyncInput = InstitutionalUserSyncInput;

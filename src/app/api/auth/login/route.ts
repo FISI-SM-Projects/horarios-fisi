@@ -53,10 +53,8 @@ export async function POST(req: NextRequest) {
       email: authData.user.email,
       name: fullName,
       role: effectiveRole,
-      institutionalRoles: authData.user.roles,
       code: authData.user.code,
-      authUserId: authData.user.id,
-      school: authData.user.department,
+      department: authData.user.department,
     });
 
     const expiresAt =

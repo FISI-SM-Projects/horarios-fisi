@@ -53,7 +53,7 @@ async function insertTeacher(
 ) {
   const contract = overrides.contract ?? "partial10";
   const status = overrides.status ?? "borrador";
-  const department = overrides.department ?? "Ing. de Sistemas";
+  const department = overrides.department ?? "SW";
   const email = overrides.email ?? `${id}@unmsm.edu.pe`;
   await sql.query(
     `insert into teacher_profiles (id, name, email, contract, status, review_note, department)
@@ -93,8 +93,8 @@ async function insertUser(
   role: AppRole = "docente",
 ) {
   await sql.query(
-    `insert into app_users (ldap_uid, email, name, image_url, role, school, code, last_seen_at)
-     values ($1, $2, $3, '', $4, 'Ing. de Sistemas', '', now())
+    `insert into app_users (ldap_uid, email, name, image_url, role, department, code, last_seen_at)
+     values ($1, $2, $3, '', $4, 'SW', '', now())
      on conflict (ldap_uid) do nothing`,
     [ldapUid, email, ldapUid, role],
   );
@@ -336,7 +336,7 @@ describeDb("schedule-db (DB-backed characterization)", () => {
     });
     await sql.query(
       "update teacher_profiles set ldap_uid = $1, department = $3 where id = $2",
-      ["u-approve-docente", teacherId, "Ing. de Sistemas"],
+      ["u-approve-docente", teacherId, "SW"],
     );
     const teacherIdentity = makeIdentity({
       clerkUserId: "u-approve-docente",
@@ -373,7 +373,7 @@ describeDb("schedule-db (DB-backed characterization)", () => {
       email: userEmail,
       contract: "partial10",
       status: "borrador",
-      department: "Ing. de Sistemas",
+      department: "SW",
     });
     await sql.query("update teacher_profiles set ldap_uid = $1 where id = $2", [
       "u-borrador-docente",
@@ -400,11 +400,11 @@ describeDb("schedule-db (DB-backed characterization)", () => {
       email: userEmail,
       contract: "partial10",
       status: "borrador",
-      department: "Ing. de Sistemas",
+      department: "SW",
     });
     await sql.query(
       "update teacher_profiles set ldap_uid = $1, department = $3 where id = $2",
-      ["u-repeat-docente", teacherId, "Ing. de Sistemas"],
+      ["u-repeat-docente", teacherId, "SW"],
     );
     const teacherIdentity = makeIdentity({
       clerkUserId: "u-repeat-docente",
