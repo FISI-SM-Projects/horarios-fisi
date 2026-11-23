@@ -1,7 +1,23 @@
 import type { AppRole } from "@/lib/domain/types";
 
+export const SAGD_CLIENT_ROLE_ACCESS = "ACCESS";
+
 export function isAppRole(value: unknown): value is AppRole {
   return value === "docente" || value === "direccion" || value === "admin";
+}
+
+/**
+ * Validates if the client roles array contains the required ACCESS role for SAGD.
+ */
+export function hasRequiredClientAccess(
+  clientRoles: string[] = [],
+  requiredRole = SAGD_CLIENT_ROLE_ACCESS,
+): boolean {
+  if (!Array.isArray(clientRoles) || clientRoles.length === 0) {
+    return false;
+  }
+  const normalized = clientRoles.map((r) => r.trim().toUpperCase());
+  return normalized.includes(requiredRole.toUpperCase());
 }
 
 /**
@@ -40,10 +56,15 @@ export function resolveEffectiveRole(
 }
 
 /**
- * Checks whether the institutional roles qualify for access to Horarios FISI.
+ * Checks whether the institutional roles qualify for access to Horarios FISI,
+ * optionally verifying the client-level ACCESS role in Keycloak.
  */
 export function canAccessHorariosFisi(
   institutionalRoles: string[] = [],
+  clientRoles?: string[],
 ): boolean {
+  if (clientRoles !== undefined && !hasRequiredClientAccess(clientRoles)) {
+    return false;
+  }
   return resolveEffectiveRole(institutionalRoles) !== null;
 }

@@ -11,6 +11,8 @@ export type SessionUser = {
   code?: string;
   authUserId?: number;
   authAccountId?: number;
+  sub?: string;
+  department?: string;
 };
 
 export type SessionData = {

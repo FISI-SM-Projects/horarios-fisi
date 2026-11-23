@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
     }
 
     const fullName =
-      `${authData.user.firstName} ${authData.user.lastName}`.trim();
+      `${authData.user.firstName} ${authData.user.lastName}`.trim() ||
+      authData.user.ldapUid;
 
     // Just-in-time synchronization in app_users
     await syncInstitutionalUser({
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       institutionalRoles: authData.user.roles,
       code: authData.user.code,
       authUserId: authData.user.id,
+      school: authData.user.department,
     });
 
     const expiresAt =
@@ -72,6 +74,8 @@ export async function POST(req: NextRequest) {
         institutionalRoles: authData.user.roles,
         code: authData.user.code,
         authUserId: authData.user.id,
+        sub: authData.user.sub,
+        department: authData.user.department,
       },
     };
 
