@@ -102,7 +102,7 @@ export default function SignInPage() {
               </h2>
               <p className="text-muted-foreground text-xs leading-relaxed">
                 Ingresa con tu usuario o correo institucional (@unmsm.edu.pe) y
-                tu contraseña del servidor central LDAP.
+                tu contraseña (mismas que el SUM).
               </p>
             </div>
 
@@ -134,7 +134,7 @@ export default function SignInPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-xs font-medium">
-                  Contraseña LDAP
+                  Contraseña
                 </Label>
                 <Input
                   id="password"

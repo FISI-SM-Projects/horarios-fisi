@@ -2034,7 +2034,7 @@ function DocenteView({
           />
         </CardContent>
       </Card>
-      <aside className="grid min-h-0 content-start gap-3 overflow-visible xl:overflow-hidden">
+      <aside className="grid min-h-0 min-w-0 content-start gap-3 overflow-visible xl:overflow-hidden">
         {sandboxMode ? (
           <Alert className="rounded-md p-2" variant="warning">
             <Info />
@@ -3344,7 +3344,7 @@ function TeacherStatusPanel({
 }) {
   const rule = contractRules[profile.contract];
   return (
-    <Card className="overflow-hidden">
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader className="border-b px-2.5 py-1.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -3366,7 +3366,7 @@ function TeacherStatusPanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-2 px-2.5 py-2 text-sm">
+      <CardContent className="grid min-w-0 gap-2 px-2.5 py-2 text-sm">
         {profile.status === "solicitud_reapertura" ? (
           <Alert variant="warning" className="p-2.5">
             <AlertCircle />
@@ -3384,7 +3384,7 @@ function TeacherStatusPanel({
             <AlertDescription>{profile.reviewNote}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="min-w-0 grid grid-cols-3 gap-2">
           <StatusMetric
             label="Horas"
             value={`${validation.selectedHours}/${rule.requiredHours}`}
@@ -3398,8 +3398,8 @@ function TeacherStatusPanel({
             value={`${validation.countedCourses}/${rule.maxCourses}`}
           />
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate text-muted-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
             {profile.approvedAt
               ? `Aprobado: ${profile.approvedAt}`
               : profile.submittedAt
@@ -3410,6 +3410,7 @@ function TeacherStatusPanel({
             <Button
               size="sm"
               variant="outline"
+              className="shrink-0"
               disabled={periodClosed}
               loading={saving}
               onClick={onRequestReopen}
@@ -3436,9 +3437,9 @@ function TeacherStatusPanel({
 
 function StatusMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border bg-muted/35 p-2">
+    <div className="min-w-0 rounded-md border bg-muted/35 p-2">
       <div className="truncate text-muted-foreground text-xs">{label}</div>
-      <div className="font-semibold tabular-nums">{value}</div>
+      <div className="truncate font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -3565,14 +3566,14 @@ function DirectorView({
                   <SelectLabel>Departamento</SelectLabel>
                   <SelectItem value="all">Todos los departamentos</SelectItem>
                   {departments
-                    .filter((dept) => dept !== "Sin departamento")
+                    .filter((dept) => dept !== "NA")
                     .map((dept) => (
                       <SelectItem key={dept} value={dept}>
                         {dept}
                       </SelectItem>
                     ))}
                   <SelectItem value="sin_departamento">
-                    Sin departamento
+                    Sin departamento / NA
                   </SelectItem>
                 </SelectGroup>
               </SelectContent>
@@ -4788,7 +4789,7 @@ function filterTeachers(
     if (departmentFilter && departmentFilter !== "all") {
       const teacherDept = normalizeDepartment(teacher.department);
       if (departmentFilter === "sin_departamento") {
-        if (teacherDept !== "Sin departamento") {
+        if (teacherDept !== "NA") {
           return false;
         }
       } else if (teacherDept !== normalizeDepartment(departmentFilter)) {
