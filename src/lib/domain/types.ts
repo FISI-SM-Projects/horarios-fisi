@@ -1,5 +1,5 @@
 import type { Course, TeacherProfile } from "@/lib/domain/schedule-data";
-import type { TeacherCourseImportResult } from "@/lib/domain/teacher-course-import";
+import type { CourseImportResult } from "@/lib/domain/course-import";
 
 export type AppRole = "docente" | "direccion" | "admin";
 
@@ -101,12 +101,8 @@ export type InstitutionalUserSyncInput = {
 
 export type ClerkUserSyncInput = InstitutionalUserSyncInput;
 
-export type TeacherCourseImportResponse = Omit<
-  TeacherCourseImportResult,
-  "resolvedAssignments"
-> & {
+export type CourseImportResponse = Omit<CourseImportResult, "coursesToUpsert"> & {
   applied: boolean;
-  replaceTeachers: boolean;
   payload: SchedulePayload;
 };
 

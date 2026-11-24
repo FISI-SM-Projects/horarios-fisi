@@ -35,13 +35,13 @@ export function normalizeSchoolName(school: string) {
   ) {
     return "Ingeniería de Inteligencia Artificial";
   }
+  if (normalized === "transversal") {
+    return "Transversal";
+  }
   return school;
 }
 
 export function courseBelongsToSchool(course: Course, schoolName: string) {
-  if (course.school === "Transversal") {
-    return true;
-  }
   return normalizeSchoolName(course.school) === normalizeSchoolName(schoolName);
 }
 
@@ -74,8 +74,5 @@ export function visibleCoursesForSchoolAndCurriculum(
   if (!curriculum || curriculum === "all") {
     return visible;
   }
-  return visible.filter(
-    (course) =>
-      course.school === "Transversal" || course.curriculum === curriculum,
-  );
+  return visible.filter((course) => course.curriculum === curriculum);
 }

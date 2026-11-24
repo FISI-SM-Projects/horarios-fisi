@@ -36,8 +36,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   completeOnboardingMutation,
+  runCourseImport,
   runScheduleMutation,
-  runTeacherCourseImport,
 } from "@/app/schedule-actions";
 import {
   Alert,
@@ -164,11 +164,11 @@ import {
 } from "@/lib/domain/schedule-rules";
 import type {
   AppRole,
+  CourseImportResponse,
   Onboarding,
   ScheduleEvent,
   SchedulePayload,
   ScheduleUser,
-  TeacherCourseImportResponse,
 } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
@@ -921,22 +921,19 @@ export function ScheduleApp({
     return payload;
   };
 
-  const handleImportTeacherCourses = async ({
+  const handleImportCourses = async ({
     apply,
-    csv,
-    replaceTeachers,
+    files,
   }: {
     apply: boolean;
-    csv: string;
-    replaceTeachers: boolean;
+    files: Array<{ filename: string; content: string }>;
   }) => {
     setSaving(true);
     try {
       if (useServerActions) {
-        const result = await runTeacherCourseImport({
+        const result = await runCourseImport({
           apply,
-          csv,
-          replaceTeachers,
+          files,
         });
         if (!result.ok) {
           toast.error(result.error);
@@ -946,11 +943,11 @@ export function ScheduleApp({
         if (result.result.ok) {
           toast.success(
             result.result.applied
-              ? "Carga docente aplicada."
-              : "CSV validado correctamente.",
+              ? `Catálogo importado: ${result.result.newCoursesCount} nuevos, ${result.result.updatedCoursesCount} actualizados.`
+              : `Validación exitosa: ${result.result.consolidatedCoursesCount} cursos consolidados.`,
           );
         } else {
-          toast.error("CSV con observaciones por corregir.");
+          toast.error("El CSV contiene observaciones por corregir.");
         }
         return result.result;
       }
@@ -958,28 +955,27 @@ export function ScheduleApp({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "importTeacherCourses",
+          action: "importCourses",
           apply,
-          csv,
-          replaceTeachers,
+          files,
         }),
       });
       if (!response.ok) {
         toast.error(
-          await readApiError(response, "No se pudo importar el CSV."),
+          await readApiError(response, "No se pudo importar los cursos."),
         );
         return null;
       }
-      const result = (await response.json()) as TeacherCourseImportResponse;
+      const result = (await response.json()) as CourseImportResponse;
       writeData(result.payload);
       if (result.ok) {
         toast.success(
           result.applied
-            ? "Carga docente aplicada."
-            : "CSV validado correctamente.",
+            ? `Catálogo importado: ${result.newCoursesCount} nuevos, ${result.updatedCoursesCount} actualizados.`
+            : `Validación exitosa: ${result.consolidatedCoursesCount} cursos consolidados.`,
         );
       } else {
-        toast.error("CSV con observaciones por corregir.");
+        toast.error("El CSV contiene observaciones por corregir.");
       }
       return result;
     } catch {
@@ -1100,7 +1096,7 @@ export function ScheduleApp({
             data.teachers.length > 0 && approvedCount === data.teachers.length
           }
           onCreateCourse={handleCreateCourse}
-          onImportTeacherCourses={handleImportTeacherCourses}
+          onImportCourses={handleImportCourses}
           onSetAcademicTerm={handleSetAcademicTerm}
           onSetCourseActive={handleSetCourseActive}
           onSetPeriodClosed={handleSetPeriodClosed}
@@ -2326,7 +2322,7 @@ function ConfigurationView({
   canClosePeriod,
   catalog,
   onCreateCourse,
-  onImportTeacherCourses,
+  onImportCourses,
   onSetAcademicTerm,
   onSetCourseActive,
   onSetPeriodClosed,
@@ -2345,11 +2341,10 @@ function ConfigurationView({
     name: string;
     school: string;
   }) => Promise<SchedulePayload | null>;
-  onImportTeacherCourses: (input: {
+  onImportCourses: (input: {
     apply: boolean;
-    csv: string;
-    replaceTeachers: boolean;
-  }) => Promise<TeacherCourseImportResponse | null>;
+    files: Array<{ filename: string; content: string }>;
+  }) => Promise<CourseImportResponse | null>;
   onSetAcademicTerm: (academicTerm: string) => Promise<SchedulePayload | null>;
   onSetCourseActive: (courseId: string, active: boolean) => Promise<void>;
   onSetPeriodClosed: (closed: boolean) => Promise<SchedulePayload | null>;
@@ -2368,11 +2363,12 @@ function ConfigurationView({
   const [catalogStatusFilter, setCatalogStatusFilter] =
     useState<CourseStatusFilter>("all");
   const [catalogSchoolFilter, setCatalogSchoolFilter] = useState("all");
-  const [teacherCourseImportCsv, setTeacherCourseImportCsv] = useState("");
-  const [teacherCourseImportFile, setTeacherCourseImportFile] = useState("");
-  const [replaceTeacherCourses, setReplaceTeacherCourses] = useState(true);
-  const [teacherCourseImportResult, setTeacherCourseImportResult] =
-    useState<TeacherCourseImportResponse | null>(null);
+  const [courseImportFiles, setCourseImportFiles] = useState<
+    Array<{ filename: string; content: string }>
+  >([]);
+  const [courseImportResult, setCourseImportResult] =
+    useState<CourseImportResponse | null>(null);
+  const [courseImportLoading, setCourseImportLoading] = useState(false);
   const selectedSchool = customSchool.trim() || school;
   const activeCount = catalog.filter(
     (course) => course.active !== false,
@@ -2433,32 +2429,47 @@ function ConfigurationView({
     }
   };
 
-  const handleTeacherCourseFile = async (
+  const handleCourseFilesChange = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) {
+    const fileList = event.target.files;
+    if (!fileList || fileList.length === 0) {
       return;
     }
-    const body = await file.text();
-    setTeacherCourseImportCsv(body);
-    setTeacherCourseImportFile(file.name);
-    setTeacherCourseImportResult(null);
+    const files: Array<{ filename: string; content: string }> = [];
+    for (let i = 0; i < fileList.length; i += 1) {
+      const file = fileList[i];
+      if (file) {
+        const content = await file.text();
+        files.push({ filename: file.name, content });
+      }
+    }
+    setCourseImportFiles(files);
+    setCourseImportResult(null);
   };
 
-  const handleTeacherCourseImport = async (apply: boolean) => {
-    if (!teacherCourseImportCsv.trim()) {
-      toast.error("Selecciona un CSV de carga docente.");
+  const handleCourseImport = async (apply: boolean) => {
+    if (courseImportFiles.length === 0) {
+      toast.error("Selecciona al menos un archivo CSV.");
       return;
     }
-    const result = await onImportTeacherCourses({
-      apply,
-      csv: teacherCourseImportCsv,
-      replaceTeachers: replaceTeacherCourses,
-    });
-    if (result) {
-      setTeacherCourseImportResult(result);
+    setCourseImportLoading(true);
+    try {
+      const result = await onImportCourses({
+        apply,
+        files: courseImportFiles,
+      });
+      if (result) {
+        setCourseImportResult(result);
+      }
+    } finally {
+      setCourseImportLoading(false);
     }
+  };
+
+  const handleClearCourseFiles = () => {
+    setCourseImportFiles([]);
+    setCourseImportResult(null);
   };
 
   return (
@@ -2527,40 +2538,43 @@ function ConfigurationView({
               <Field className="rounded-md border bg-muted/25 p-2">
                 <div className="flex w-full items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <FieldLabel>Carga docente CSV</FieldLabel>
+                    <FieldLabel>Carga de cursos (CSV)</FieldLabel>
                     <FieldDescription className="truncate">
-                      {teacherCourseImportFile || "Sin archivo seleccionado"}
+                      {courseImportFiles.length === 0
+                        ? "Selecciona uno o más archivos CSV"
+                        : `${courseImportFiles.length} archivo(s) seleccionado(s)`}
                     </FieldDescription>
                   </div>
                   <Upload className="mt-0.5 size-4 shrink-0 text-gold" />
                 </div>
                 <Input
                   accept=".csv,text/csv"
-                  aria-label="CSV de carga docente"
+                  aria-label="Archivos CSV de cursos"
+                  multiple
                   nativeInput
-                  onChange={handleTeacherCourseFile}
+                  onChange={handleCourseFilesChange}
                   size="sm"
                   type="file"
                 />
-                <Field className="flex-row items-center justify-between rounded-md border bg-background/70 px-2 py-1">
-                  <div>
-                    <FieldLabel className="text-xs">
-                      Reemplazar docentes incluidos
-                    </FieldLabel>
-                    <FieldDescription>
-                      Actualiza solo filas del CSV.
-                    </FieldDescription>
+                {courseImportFiles.length > 0 && (
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="truncate max-w-[200px]" title={courseImportFiles.map((f) => f.filename).join(", ")}>
+                      {courseImportFiles.map((f) => f.filename).join(", ")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearCourseFiles}
+                      className="text-xs text-destructive hover:underline cursor-pointer"
+                    >
+                      Limpiar
+                    </button>
                   </div>
-                  <Switch
-                    checked={replaceTeacherCourses}
-                    onCheckedChange={setReplaceTeacherCourses}
-                  />
-                </Field>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <Button
-                    disabled={!teacherCourseImportCsv.trim() || saving}
-                    loading={saving}
-                    onClick={() => handleTeacherCourseImport(false)}
+                    disabled={courseImportFiles.length === 0 || courseImportLoading || saving}
+                    loading={courseImportLoading || saving}
+                    onClick={() => handleCourseImport(false)}
                     size="sm"
                     variant="outline"
                   >
@@ -2568,43 +2582,64 @@ function ConfigurationView({
                   </Button>
                   <Button
                     disabled={
-                      !teacherCourseImportResult?.ok ||
-                      teacherCourseImportResult.assignments === 0 ||
-                      teacherCourseImportResult.applied ||
+                      !courseImportResult?.ok ||
+                      courseImportResult.consolidatedCoursesCount === 0 ||
+                      courseImportResult.applied ||
+                      courseImportLoading ||
                       saving
                     }
-                    loading={saving}
-                    onClick={() => handleTeacherCourseImport(true)}
+                    loading={courseImportLoading || saving}
+                    onClick={() => handleCourseImport(true)}
                     size="sm"
                   >
                     Aplicar
                   </Button>
                 </div>
-                {teacherCourseImportResult ? (
+                {courseImportResult ? (
                   <Alert
                     className="p-2"
-                    variant={teacherCourseImportResult.ok ? "success" : "error"}
+                    variant={courseImportResult.ok ? "success" : "error"}
                   >
-                    {teacherCourseImportResult.ok ? (
+                    {courseImportResult.ok ? (
                       <ShieldCheck />
                     ) : (
                       <AlertCircle />
                     )}
                     <AlertTitle>
-                      {teacherCourseImportResult.ok
-                        ? `${teacherCourseImportResult.assignments} asignaciones`
-                        : `${teacherCourseImportResult.errors.length} observaciones`}
+                      {courseImportResult.ok
+                        ? courseImportResult.applied
+                          ? "Carga aplicada con éxito"
+                          : `${courseImportResult.consolidatedCoursesCount} cursos válidos`
+                        : `${courseImportResult.errors.length} observación(es)`}
                     </AlertTitle>
-                    <AlertDescription>
-                      {teacherCourseImportResult.ok ? (
-                        <span>
-                          {teacherCourseImportResult.teachers} docentes ·{" "}
-                          {teacherCourseImportResult.rows} filas
-                        </span>
+                    <AlertDescription className="space-y-1 text-xs">
+                      {courseImportResult.ok ? (
+                        <div className="grid gap-0.5">
+                          <span>
+                            {courseImportResult.totalRows} filas leídas en {courseImportResult.filesCount} archivo(s).
+                          </span>
+                          <span className="font-medium text-foreground">
+                            {courseImportResult.newCoursesCount} nuevo(s) · {courseImportResult.updatedCoursesCount} a actualizar
+                          </span>
+                          {courseImportResult.warnings.length > 0 && (
+                            <span className="text-amber-600 dark:text-amber-400">
+                              {courseImportResult.warnings.length} advertencia(s) consolidada(s)
+                            </span>
+                          )}
+                        </div>
                       ) : (
-                        teacherCourseImportResult.errors
-                          .slice(0, 3)
-                          .map((item) => <span key={item}>{item}</span>)
+                        <div className="grid gap-1 max-h-32 overflow-y-auto">
+                          {courseImportResult.errors.slice(0, 5).map((item) => (
+                            <span key={item} className="block truncate" title={item}>
+                              {item}
+                            </span>
+                          ))}
+                          {courseImportResult.errors.length > 5 && (
+                            <span className="text-muted-foreground">
+                              ...y {courseImportResult.errors.length - 5} más.
+                            </span>
+                          )}
+                        </div>
                       )}
                     </AlertDescription>
                   </Alert>

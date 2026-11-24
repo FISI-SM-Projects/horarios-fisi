@@ -5,9 +5,11 @@ import {
 } from "../src/lib/data/schedule-db";
 
 await ensureScheduleSchema();
-await seedScheduleData({
-  includeDemoTeachers: process.argv.includes("--demo"),
-});
+if (process.argv.includes("--demo")) {
+  await seedScheduleData({
+    includeDemoTeachers: true,
+  });
+}
 const verification = await verifyScheduleSchema();
 const ready = Object.values(verification).every(Boolean);
 console.log(JSON.stringify({ ready, verification }, null, 2));

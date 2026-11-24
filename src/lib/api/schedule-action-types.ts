@@ -1,9 +1,10 @@
 import type { ContractKey } from "@/lib/domain/schedule-data";
 import type {
   AppRole,
+  CourseImportResponse,
   SchedulePayload,
-  TeacherCourseImportResponse,
 } from "@/lib/domain/types";
+import type { CourseImportFileInput } from "@/lib/domain/course-import";
 
 export type CompleteOnboardingAction = {
   action: "completeOnboarding";
@@ -35,19 +36,18 @@ export type ScheduleMutationAction =
   | { action: "authorizeReopen"; teacherId: string }
   | { action: "submit" };
 
-export type TeacherCourseImportAction = {
-  action: "importTeacherCourses";
+export type CourseImportAction = {
+  action: "importCourses";
   apply: boolean;
-  csv: string;
-  replaceTeachers: boolean;
+  files: CourseImportFileInput[];
 };
 
 export type ScheduleAction =
   | CompleteOnboardingAction
   | ScheduleMutationAction
-  | TeacherCourseImportAction;
+  | CourseImportAction;
 
-export type ScheduleActionData = SchedulePayload | TeacherCourseImportResponse;
+export type ScheduleActionData = SchedulePayload | CourseImportResponse;
 
 export type ScheduleActionRunResult =
   | { ok: true; data: ScheduleActionData }
@@ -57,6 +57,6 @@ export type SchedulePayloadActionResponse =
   | { ok: true; payload: SchedulePayload }
   | { ok: false; error: string };
 
-export type TeacherCourseImportActionResponse =
-  | { ok: true; result: TeacherCourseImportResponse }
+export type CourseImportActionResponse =
+  | { ok: true; result: CourseImportResponse }
   | { ok: false; error: string };

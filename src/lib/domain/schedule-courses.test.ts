@@ -8,14 +8,15 @@ import {
 import { courseCatalog } from "@/lib/domain/schedule-data";
 
 describe("schedule courses", () => {
-  test("keeps transversal courses visible for every school", () => {
+  test("filters courses strictly by school, including transversal when selected", () => {
+    expect(courseBelongsToSchool(courseCatalog[9], "Transversal")).toBe(true);
     expect(courseBelongsToSchool(courseCatalog[9], "Ing. de Sistemas")).toBe(
-      true,
+      false,
     );
-    expect(courseBelongsToSchool(courseCatalog[9], "Contabilidad")).toBe(true);
+    expect(courseBelongsToSchool(courseCatalog[9], "Contabilidad")).toBe(false);
   });
 
-  test("filters active courses to the selected school and transversal catalog", () => {
+  test("filters active courses strictly to the selected school", () => {
     const visible = visibleCoursesForSchool(
       [
         ...courseCatalog,
@@ -32,7 +33,6 @@ describe("schedule courses", () => {
     expect(visible.map((course) => course.id)).toEqual([
       "contabilidad-general",
       "costos",
-      "tesis",
     ]);
   });
 
@@ -62,13 +62,13 @@ describe("schedule courses", () => {
       "Ingeniería de Sistemas",
       "2018",
     );
-    expect(plan2018.map((c) => c.id)).toEqual(["c1", "c3"]);
+    expect(plan2018.map((c) => c.id)).toEqual(["c1"]);
 
     const plan2023 = visibleCoursesForSchoolAndCurriculum(
       sampleCatalog,
       "Ingeniería de Sistemas",
       "2023",
     );
-    expect(plan2023.map((c) => c.id)).toEqual(["c2", "c3"]);
+    expect(plan2023.map((c) => c.id)).toEqual(["c2"]);
   });
 });

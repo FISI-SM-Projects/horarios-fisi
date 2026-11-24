@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { runScheduleAction } from "@/lib/api/schedule-action-runner";
 import type {
   CompleteOnboardingAction,
+  CourseImportActionResponse,
   ScheduleMutationAction,
   SchedulePayloadActionResponse,
-  TeacherCourseImportActionResponse,
 } from "@/lib/api/schedule-action-types";
+import type { CourseImportFileInput } from "@/lib/domain/course-import";
 import { resolveScheduleIdentity } from "@/lib/auth/schedule-identity";
 
 export async function runScheduleMutation(
@@ -24,11 +25,11 @@ export async function runScheduleMutation(
   return { ok: true, payload: result.data };
 }
 
-export async function runTeacherCourseImport(
-  action: Omit<TeacherCourseImportActionPayload, "action">,
-): Promise<TeacherCourseImportActionResponse> {
+export async function runCourseImport(
+  action: Omit<CourseImportActionPayload, "action">,
+): Promise<CourseImportActionResponse> {
   const result = await runAuthenticatedAction({
-    action: "importTeacherCourses",
+    action: "importCourses",
     ...action,
   });
   if (!result.ok) {
@@ -58,11 +59,10 @@ export async function completeOnboardingMutation(
   return { ok: true, payload: result.data };
 }
 
-type TeacherCourseImportActionPayload = {
-  action: "importTeacherCourses";
+type CourseImportActionPayload = {
+  action: "importCourses";
   apply: boolean;
-  csv: string;
-  replaceTeachers: boolean;
+  files: CourseImportFileInput[];
 };
 
 async function runAuthenticatedAction(

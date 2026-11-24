@@ -10,7 +10,7 @@ import {
   authorizeScheduleReopen,
   completeOnboarding,
   createCourse,
-  importTeacherCourses,
+  importCourses,
   observeSchedule,
   removeCourse,
   requestScheduleReopen,
@@ -171,14 +171,13 @@ async function runAction(
   if (body.action === "setPeriodClosed") {
     return setPeriodClosed(identity, Boolean(body.closed));
   }
-  if (body.action === "importTeacherCourses") {
-    if (typeof body.csv !== "string") {
-      throw new ScheduleError("CSV no válido.", 400);
+  if (body.action === "importCourses") {
+    if (!Array.isArray(body.files)) {
+      throw new ScheduleError("Archivos no válidos.", 400);
     }
-    return importTeacherCourses(identity, {
+    return importCourses(identity, {
       apply: Boolean(body.apply),
-      csv: body.csv,
-      replaceTeachers: Boolean(body.replaceTeachers),
+      files: body.files,
     });
   }
   if (body.action === "requestReopen") {

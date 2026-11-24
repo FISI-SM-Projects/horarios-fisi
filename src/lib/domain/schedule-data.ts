@@ -101,7 +101,7 @@ export const contractRules: Record<
 };
 
 export type DepartmentCode = "SW" | "CC" | "NA";
-export type SchoolCode = "EPIS" | "EPISW" | "EPCC" | "EPIA";
+export type SchoolCode = "EPIS" | "EPISW" | "EPCC" | "EPIA" | "Transversal";
 
 export const schools = [
   "Ingeniería de Sistemas",
