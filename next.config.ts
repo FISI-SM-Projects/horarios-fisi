@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
+const basePath = "/sagd-horario-docentes";
+
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["aulavirtual.local"],
+  basePath,
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
+  },
   output: "standalone",
   async redirects() {
     return [

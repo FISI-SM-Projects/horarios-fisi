@@ -36,7 +36,9 @@ export default async function proxy(
       session.user.role === "admin" || session.user.role === "direccion"
         ? "/direction"
         : "/teacher";
-    return NextResponse.redirect(new URL(destination, request.url));
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = destination;
+    return NextResponse.redirect(redirectUrl);
   }
 
   // Public routes allowed without authentication
@@ -51,7 +53,8 @@ export default async function proxy(
 
   // Protected route accessed without valid session -> redirect to /sign-in
   if (!session) {
-    const signInUrl = new URL("/sign-in", request.url);
+    const signInUrl = request.nextUrl.clone();
+    signInUrl.pathname = "/sign-in";
     return NextResponse.redirect(signInUrl);
   }
 

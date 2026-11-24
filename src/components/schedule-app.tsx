@@ -135,6 +135,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ScheduleMutationAction } from "@/lib/api/schedule-action-types";
+import { withBasePath } from "@/lib/base-path";
 import {
   curriculaForSchool,
   visibleCoursesForSchool,
@@ -227,7 +228,9 @@ export function ScheduleApp({
   view: ViewKey;
 }) {
   const router = useRouter();
-  const endpoint = preview ? "/api/schedule?preview=1" : "/api/schedule";
+  const endpoint = withBasePath(
+    preview ? "/api/schedule?preview=1" : "/api/schedule",
+  );
   const useServerActions = Boolean(initialData) && !preview;
   const [data, setData] = useState<SchedulePayload | null>(
     () => initialData ?? schedulePayloadCache.get(endpoint) ?? null,
@@ -1200,7 +1203,9 @@ export function OnboardingRouteApp({
     () => initialData ?? null,
   );
   const [error, setError] = useState<string | null>(null);
-  const endpoint = preview ? "/api/schedule?preview=1" : "/api/schedule";
+  const endpoint = withBasePath(
+    preview ? "/api/schedule?preview=1" : "/api/schedule",
+  );
   const useServerActions = Boolean(initialData) && !preview;
 
   useEffect(() => {
@@ -1287,11 +1292,11 @@ function InstitutionalUserButton({
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch(withBasePath("/api/auth/logout"), { method: "POST" });
     } catch {
       // Ignorar errores de red para asegurar la redirección
     } finally {
-      window.location.href = "/sign-in";
+      window.location.href = withBasePath("/sign-in");
     }
   };
 
@@ -1457,7 +1462,7 @@ function AppSidebar({
       <SidebarHeader className="h-14 border-sidebar-border border-b p-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0">
         <div className="flex h-10 w-full items-center gap-3 rounded-lg px-1 group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border group-data-[collapsible=icon]:border-sidebar-border group-data-[collapsible=icon]:bg-sidebar-accent group-data-[collapsible=icon]:px-0">
           <Image
-            src="/escudo-unmsm.png"
+            src={withBasePath("/escudo-unmsm.png")}
             alt="Escudo UNMSM"
             width={40}
             height={40}
@@ -1581,9 +1586,11 @@ function AppSidebar({
             className="w-full border-sidebar-border bg-transparent text-sidebar-foreground group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0"
             onClick={async () => {
               try {
-                await fetch("/api/auth/logout", { method: "POST" });
+                await fetch(withBasePath("/api/auth/logout"), {
+                  method: "POST",
+                });
               } finally {
-                window.location.href = "/sign-in";
+                window.location.href = withBasePath("/sign-in");
               }
             }}
           >
@@ -1755,7 +1762,7 @@ function OnboardingView({
         <div className="hidden min-h-0 flex-col justify-between bg-sidebar p-6 text-sidebar-foreground lg:flex">
           <div className="flex items-center gap-3">
             <Image
-              src="/escudo-unmsm.png"
+              src={withBasePath("/escudo-unmsm.png")}
               alt="Escudo UNMSM"
               width={52}
               height={52}
@@ -5721,7 +5728,7 @@ export function SignedOutShell() {
         <div className="flex min-h-0 flex-col justify-between bg-sidebar p-6 text-sidebar-foreground md:p-8">
           <div className="flex items-center gap-3">
             <Image
-              src="/escudo-unmsm.png"
+              src={withBasePath("/escudo-unmsm.png")}
               alt="Escudo UNMSM"
               width={56}
               height={56}

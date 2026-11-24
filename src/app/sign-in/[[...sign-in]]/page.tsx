@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { withBasePath } from "@/lib/base-path";
 
 export default function SignInPage() {
   const [identifier, setIdentifier] = useState("");
@@ -19,7 +20,7 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(withBasePath("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: identifier, password }),
@@ -38,7 +39,7 @@ export default function SignInPage() {
         );
       }
 
-      window.location.href = data.redirectUrl || "/teacher";
+      window.location.href = withBasePath(data.redirectUrl || "/teacher");
     } catch (err: unknown) {
       setLoading(false);
       setError(
@@ -54,7 +55,7 @@ export default function SignInPage() {
         <div className="hidden min-h-0 flex-col justify-between bg-sidebar p-8 text-sidebar-foreground md:flex">
           <div className="flex items-center gap-3">
             <Image
-              src="/escudo-unmsm.png"
+              src={withBasePath("/escudo-unmsm.png")}
               alt="Escudo UNMSM"
               width={56}
               height={56}
@@ -90,7 +91,7 @@ export default function SignInPage() {
             <div className="space-y-2 text-center md:text-left">
               <div className="flex justify-center md:hidden mb-4">
                 <Image
-                  src="/escudo-unmsm.png"
+                  src={withBasePath("/escudo-unmsm.png")}
                   alt="Escudo UNMSM"
                   width={48}
                   height={48}
