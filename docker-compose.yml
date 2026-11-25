@@ -4,22 +4,20 @@ services:
     container_name: horarios-fisi-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER es requerido}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es requerido}
       POSTGRES_DB: ${POSTGRES_DB:-horarios_fisi}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql
-      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
+      - horarios_postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-horarios_fisi}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER es requerido} -d ${POSTGRES_DB:-horarios_fisi}"]
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 5s
 
   app:
+    image: richardtorres27/horarios-fisi:v1.0.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -30,14 +28,20 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-horarios_fisi}
-      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://localhost:5000}
-      AUTH_SYSTEM_CODE: ${AUTH_SYSTEM_CODE:-HORARIOS_FISI}
-      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-desarrollo_secreto_super_seguro_fisi_32_chars}
-      DIRECTION_ACCESS_CODE: ${DIRECTION_ACCESS_CODE:-}
-      DIRECTION_EMAIL_ALLOWLIST: ${DIRECTION_EMAIL_ALLOWLIST:-}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-horarios_fisi}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:?KEYCLOAK_URL es requerido}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:?KEYCLOAK_REALM es requerido}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:?KEYCLOAK_CLIENT_ID es requerido}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET es requerido}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:?AUTH_SESSION_SECRET es requerido}
     ports:
       - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/sagd-horario-docentes/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
-  postgres_data:
+  horarios_postgres_data:

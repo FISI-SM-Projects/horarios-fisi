@@ -2,7 +2,11 @@ node_modules
 .next
 .git
 .gitignore
-.env*.local
+.env
+.env.*
+!.env.example
 *.log
+docs
 openspec
-docker/init-db
+plans
+docker

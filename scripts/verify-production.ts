@@ -55,9 +55,11 @@ const minActiveCourses = readNumberArg("--min-active-courses", 1);
 
 const envChecks: Check[] = [
   hasEnv("DATABASE_URL", isPostgresUrl),
-  hasEnv("AUTH_SERVICE_URL"),
-  hasEnv("AUTH_SYSTEM_CODE"),
-  hasEnv("AUTH_SESSION_SECRET"),
+  hasEnv("KEYCLOAK_URL"),
+  hasEnv("KEYCLOAK_REALM"),
+  hasEnv("KEYCLOAK_CLIENT_ID"),
+  hasEnv("KEYCLOAK_CLIENT_SECRET"),
+  hasEnv("AUTH_SESSION_SECRET", (value) => (value?.trim().length ?? 0) >= 32),
 ];
 
 const publicChecks = await verifyPublicRoutes(baseUrl);
