@@ -15,6 +15,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+    networks:
+      - horarios_fisi_net
 
   app:
     image: richardtorres27/horarios-fisi:v1.0.0
@@ -28,7 +30,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-horarios_fisi}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@horarios-fisi-postgres:5432/${POSTGRES_DB:-horarios_fisi}
       KEYCLOAK_URL: ${KEYCLOAK_URL:?KEYCLOAK_URL es requerido}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:?KEYCLOAK_REALM es requerido}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:?KEYCLOAK_CLIENT_ID es requerido}
@@ -42,6 +44,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks:
+      - horarios_fisi_net
+      - aula_virtual_net
 
 volumes:
   horarios_postgres_data:
+
+networks:
+  horarios_fisi_net:
+  aula_virtual_net:
+    external: true
