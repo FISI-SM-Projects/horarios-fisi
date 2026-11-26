@@ -1992,7 +1992,7 @@ function DocenteView({
                 <ToolbarButton
                   disabled={saving || periodClosed}
                   onClick={handleRequestReopen}
-                  render={<Button variant="outline" />}
+                  render={<Button loading={saving} variant="outline" />}
                 >
                   Solicitar modificación
                 </ToolbarButton>
@@ -2002,7 +2002,7 @@ function DocenteView({
                 <ToolbarButton
                   disabled={saving || periodClosed || !validation.complete}
                   onClick={handleSubmit}
-                  render={<Button />}
+                  render={<Button loading={saving} />}
                 >
                   <Send data-icon="inline-start" />
                   Enviar
@@ -3804,13 +3804,9 @@ function DirectorView({
                     </SheetContent>
                   </Sheet>
                   <ToolbarButton
+                    disabled={exportTeacherCount === 0}
                     onClick={handleExportAllPdf}
-                    render={
-                      <Button
-                        disabled={exportTeacherCount === 0}
-                        variant="outline"
-                      />
-                    }
+                    render={<Button variant="outline" />}
                   >
                     <Files data-icon="inline-start" />
                     PDF todos
