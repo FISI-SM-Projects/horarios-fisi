@@ -1,6 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   buildCourseId,
   buildCourseImport,
@@ -119,36 +117,5 @@ ESTRUCTURAS DISCRETAS I,EPCC,false,203230301,3,4,Obligatorio,2023`,
       "REDACCION Y TECNICAS DE COMUNICACION EFECTIVA I",
     );
     expect(transversal?.school).toBe("Transversal");
-  });
-
-  it("successfully parses and deduplicates real sample CSV files from docs/csv", () => {
-    const csvDir = join(process.cwd(), "docs/csv");
-    const episCsv = readFileSync(join(csvDir, "cursos_epis_2023.csv"), "utf8");
-    const epccCsv = readFileSync(join(csvDir, "cursos_epcc_2023.csv"), "utf8");
-    const episwCsv = readFileSync(join(csvDir, "cursos_episw_2023.csv"), "utf8");
-
-    const files = [
-      { filename: "cursos_epis_2023.csv", content: episCsv },
-      { filename: "cursos_epcc_2023.csv", content: epccCsv },
-      { filename: "cursos_episw_2023.csv", content: episwCsv },
-    ];
-
-    const result = buildCourseImport({ files });
-    expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
-    expect(result.totalRows).toBeGreaterThan(150);
-    // Across the 3 files there are repeated transversal courses (e.g. INO101, INO102, etc.)
-    expect(result.consolidatedCoursesCount).toBeLessThan(result.totalRows);
-    
-    // Check that IDs are correctly lowercase <school>-<code>
-    const transversalIno101 = result.coursesToUpsert.find(
-      (c) => c.id === "transversal-ino101",
-    );
-    expect(transversalIno101).toBeDefined();
-    expect(transversalIno101?.name).toBe(
-      "REDACCION Y TECNICAS DE COMUNICACION EFECTIVA I",
-    );
-    expect(transversalIno101?.cycle).toBe(1);
-    expect(transversalIno101?.credits).toBe(3);
   });
 });

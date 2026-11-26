@@ -53,8 +53,7 @@ export function validateTeacherRules(
     complete:
       profile.availability.length >= rule.requiredHours &&
       blockDays >= rule.requiredBlockDays &&
-      countedCourses > 0 &&
-      countedCourses <= rule.maxCourses,
+      countedCourses > 0,
   };
 }
 
@@ -71,9 +70,7 @@ export function completionForRules(
         (validation.blockDays /
           contractRules[profile.contract].requiredBlockDays) *
           20 +
-        (validation.countedCourses /
-          contractRules[profile.contract].maxCourses) *
-          10,
+        (validation.countedCourses >= 1 ? 10 : 0),
     ),
   );
 }
@@ -88,17 +85,11 @@ export function courseAssignmentState(
   const countedCourses = profile.courses.filter(
     (item) => !item.isThesis,
   ).length;
-  const limitReached = Boolean(
-    course &&
-      !alreadyAssigned &&
-      !course.isThesis &&
-      countedCourses >= contractRules[profile.contract].maxCourses,
-  );
   return {
     alreadyAssigned,
     countedCourses,
-    limitReached,
-    canAssign: Boolean(course && !alreadyAssigned && !limitReached),
+    limitReached: false,
+    canAssign: Boolean(course && !alreadyAssigned),
   };
 }
 

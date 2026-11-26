@@ -87,7 +87,7 @@ describe("schedule rules", () => {
     expect(validation.complete).toBe(false);
   });
 
-  test("does not count thesis against course quota", () => {
+  test("does not count thesis toward non-thesis course requirement", () => {
     const validation = validateTeacherRules(
       profile({
         contract: "partial10",
@@ -102,6 +102,42 @@ describe("schedule rules", () => {
 
     expect(validation.countedCourses).toBe(1);
     expect(validation.complete).toBe(true);
+  });
+
+  test("requires at least one non-thesis course for completion", () => {
+    const validation = validateTeacherRules(
+      profile({
+        contract: "partial10",
+        courses: [courseCatalog[9]],
+        availability: seedSlots({
+          lunes: [8, 9, 10, 11],
+          miercoles: [8, 9, 10, 11],
+          viernes: [14, 15, 16, 17],
+        }),
+      }),
+    );
+
+    expect(validation.countedCourses).toBe(0);
+    expect(validation.complete).toBe(false);
+    expect(completionForRules({ contract: "partial10" }, validation)).toBe(90);
+  });
+
+  test("marks schedule complete with more than previous contract course count", () => {
+    const validation = validateTeacherRules(
+      profile({
+        contract: "partial10",
+        courses: [courseCatalog[0], courseCatalog[1], courseCatalog[2]],
+        availability: seedSlots({
+          lunes: [8, 9, 10, 11],
+          miercoles: [8, 9, 10, 11],
+          viernes: [14, 15, 16, 17],
+        }),
+      }),
+    );
+
+    expect(validation.countedCourses).toBe(3);
+    expect(validation.complete).toBe(true);
+    expect(completionForRules({ contract: "partial10" }, validation)).toBe(100);
   });
 
   test("caps visual completion at 100", () => {
@@ -120,20 +156,20 @@ describe("schedule rules", () => {
     expect(completionForRules({ contract: "partial10" }, validation)).toBe(100);
   });
 
-  test("blocks non-thesis courses after the contract quota", () => {
+  test("allows non-thesis courses without upper limit", () => {
     const assignment = courseAssignmentState(
       profile({
         contract: "partial10",
-        courses: [courseCatalog[0]],
+        courses: [courseCatalog[0], courseCatalog[1], courseCatalog[2]],
         availability: [],
       }),
-      courseCatalog[1],
+      courseCatalog[3],
     );
 
     expect(assignment).toMatchObject({
-      countedCourses: 1,
-      limitReached: true,
-      canAssign: false,
+      countedCourses: 3,
+      limitReached: false,
+      canAssign: true,
     });
   });
 

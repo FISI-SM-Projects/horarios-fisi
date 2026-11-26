@@ -1011,23 +1011,18 @@ async function addCourseToTeacher(
   }
   const profile = await readTeacher(teacherId);
   const assignment = courseAssignmentState(profile, mapCourseRow(course));
-  if (assignment.limitReached) {
-    throw new ScheduleError("Ya alcanzaste el máximo de cursos permitido.");
-  }
-  const maxCourses = contractRules[profile.contract].maxCourses;
-  const inserted = (await sql.query(
+  await sql.query(
     `
       insert into teacher_courses (teacher_id, course_id, position)
-      select $1, $2, coalesce((select max(position) + 1 from teacher_courses where teacher_id = $1), 1)
-      where (select count(*) from teacher_courses where teacher_id = $1) < $3
+      values (
+        $1,
+        $2,
+        coalesce((select max(position) + 1 from teacher_courses where teacher_id = $1), 1)
+      )
       on conflict (teacher_id, course_id) do nothing
-      returning course_id
     `,
-    [teacherId, courseId, maxCourses],
-  )) as { course_id: string }[];
-  if (inserted.length === 0 && !assignment.alreadyAssigned) {
-    throw new ScheduleError("Ya alcanzaste el máximo de cursos permitido.");
-  }
+    [teacherId, courseId],
+  );
   if (!assignment.alreadyAssigned) {
     await markTeacherDraft(teacherId);
     await recordEvent(identity, teacherId, eventType, {
@@ -1051,9 +1046,6 @@ async function addCourseToSandbox(
   }
   const profile = await readTeacherSandbox(sandboxId);
   const assignment = courseAssignmentState(profile, mapCourseRow(course));
-  if (assignment.limitReached) {
-    throw new ScheduleError("Ya alcanzaste el máximo de cursos permitido.");
-  }
   await sql.query(
     `
       insert into teacher_sandbox_courses (sandbox_id, course_id, position)

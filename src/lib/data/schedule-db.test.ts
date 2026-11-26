@@ -429,10 +429,9 @@ describeDb("schedule-db (DB-backed characterization)", () => {
     expect(eventRows.length).toBe(1);
   });
 
-  it("addCourse up to contract max is accepted, next call throws course limit error", async () => {
+  it("addCourse allows assigning multiple courses beyond previous partial10 limit", async () => {
     const teacherId = "t-limit";
     const userEmail = `${teacherId}@unmsm.edu.pe`;
-    const maxCourses = contractRules.partial10.maxCourses; // 1 non-thesis course
     await insertUser("u-limit", userEmail, "docente");
     await insertCourse("c-limit-a", "Curso A", "Ing. de Sistemas");
     await insertCourse("c-limit-b", "Curso B", "Ing. de Sistemas");
@@ -446,17 +445,13 @@ describeDb("schedule-db (DB-backed characterization)", () => {
       teacherId,
     ]);
     const identity = makeIdentity({ clerkUserId: "u-limit", email: userEmail });
-    // Fill up to maxCourses
     await addCourse(identity, "c-limit-a");
-    // One beyond the limit must throw
-    await expect(addCourse(identity, "c-limit-b")).rejects.toThrow(
-      "Ya alcanzaste el máximo de cursos permitido.",
-    );
+    await addCourse(identity, "c-limit-b");
     const rows = (await sql.query(
       "select count(*)::int as count from teacher_courses where teacher_id = $1",
       [teacherId],
     )) as { count: number }[];
-    expect(Number(rows[0].count)).toBe(maxCourses);
+    expect(Number(rows[0].count)).toBe(2);
   });
 
   it("addCourse duplicate same-course assignment does not increment count", async () => {

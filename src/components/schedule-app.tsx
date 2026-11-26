@@ -657,13 +657,6 @@ export function ScheduleApp({
       toast.info("Ese curso ya está seleccionado.");
       return;
     }
-    if (
-      !course.isThesis &&
-      validation.countedCourses >= contractRules[profile.contract].maxCourses
-    ) {
-      toast.error("Ya alcanzaste el máximo de cursos para tu clase docente.");
-      return;
-    }
     const previous = data;
     const mutationId = nextTeacherCourseMutation(profile.id);
     setTeacherCoursePending(profile.id, true);
@@ -1930,25 +1923,15 @@ function DocenteView({
   const selectedCourseAlreadyAdded = selectedCourse
     ? profile.courses.some((course) => course.id === selectedCourse.id)
     : false;
-  const selectedCourseLimitReached = Boolean(
-    selectedCourse &&
-      !selectedCourse.isThesis &&
-      validation.countedCourses >= contractRules[profile.contract].maxCourses,
-  );
   const addCourseDisabled =
-    isLocked ||
-    !selectedCourse ||
-    selectedCourseAlreadyAdded ||
-    selectedCourseLimitReached;
+    isLocked || !selectedCourse || selectedCourseAlreadyAdded;
   const addCourseLabel = periodClosed
     ? "Cerrado"
     : isLocked
       ? "Bloqueado"
       : selectedCourseAlreadyAdded
         ? "Agregado"
-        : selectedCourseLimitReached
-          ? "Cupo lleno"
-          : "Agregar";
+        : "Agregar";
   const creditTotal = profile.courses.reduce(
     (total, course) => total + (course.credits ?? 0),
     0,
@@ -2054,7 +2037,8 @@ function DocenteView({
           addCourseLabel={addCourseLabel}
           courseId={courseId}
           creditProgress={hasKnownCredits ? `${creditTotal} cr.` : undefined}
-          courseProgress={`${validation.countedCourses}/${contractRules[profile.contract].maxCourses}`}
+          courseComplete={validation.countedCourses > 0}
+          courseProgress={`${validation.countedCourses}`}
           courseSaving={courseSaving}
           courses={profile.courses}
           disabled={isLocked}
@@ -2090,8 +2074,7 @@ function DocenteRuleStrip({
     rule.requiredDailyBlockCount > 1
       ? `${rule.requiredDailyBlockCount} bloques de 4 h`
       : "bloque de 4 h";
-  const courseLabel = rule.maxCourses === 1 ? "curso" : "cursos";
-  const ruleSummary = `${rule.requiredDailyHours} h/día · ${blockLabel} · ${rule.requiredBlockDays} días · máx. ${rule.maxCourses} ${courseLabel}`;
+  const ruleSummary = `${rule.requiredDailyHours} h/día · ${blockLabel} · ${rule.requiredBlockDays} días`;
   const items = [
     {
       complete: validation.selectedHours >= rule.requiredHours,
@@ -2104,11 +2087,9 @@ function DocenteRuleStrip({
       value: `${validation.blockDays}/${rule.requiredBlockDays}`,
     },
     {
-      complete:
-        validation.countedCourses > 0 &&
-        validation.countedCourses <= rule.maxCourses,
+      complete: validation.countedCourses > 0,
       label: "Cursos",
-      value: `${validation.countedCourses}/${rule.maxCourses}`,
+      value: `${validation.countedCourses}`,
     },
   ];
 
@@ -2159,6 +2140,7 @@ function CoursesEditorCard({
   addCourseLabel,
   catalog = [],
   catalogForSchool,
+  courseComplete = false,
   courseId,
   creditProgress,
   courseProgress,
@@ -2178,6 +2160,7 @@ function CoursesEditorCard({
   catalogForSchool: Course[];
   courseId: string;
   creditProgress?: string;
+  courseComplete?: boolean;
   courseProgress: string;
   courseSaving: boolean;
   courses: Course[];
@@ -2215,11 +2198,16 @@ function CoursesEditorCard({
               Cursos seleccionados
             </CardTitle>
             <CardDescription className="hidden truncate sm:block">
-              Carga permitida por contrato.
+              Cursos asignados para el semestre.
             </CardDescription>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <Badge variant="secondary">{courseProgress}</Badge>
+            <Badge
+              variant="secondary"
+              className={courseComplete ? "text-availability" : undefined}
+            >
+              {courseProgress}
+            </Badge>
             {creditProgress ? (
               <Badge variant="outline">{creditProgress}</Badge>
             ) : null}
@@ -3205,7 +3193,7 @@ function UsersAccessTable({
                     <Badge
                       variant={
                         user.teacherStatus === "enviado" ||
-                        user.teacherStatus === "aprobado"
+                          user.teacherStatus === "aprobado"
                           ? "default"
                           : "secondary"
                       }
@@ -3399,8 +3387,7 @@ function TeacherStatusPanel({
               Cierre docente
             </CardTitle>
             <CardDescription className="hidden sm:block">
-              {rule.requiredHours} h · {rule.requiredBlockDays} bloques ·{" "}
-              {rule.maxCourses} cursos
+              {rule.requiredHours} h · {rule.requiredBlockDays} bloques
             </CardDescription>
           </div>
           <Badge variant={validation.complete ? "default" : "secondary"}>
@@ -3437,7 +3424,8 @@ function TeacherStatusPanel({
           />
           <StatusMetric
             label="Cursos"
-            value={`${validation.countedCourses}/${rule.maxCourses}`}
+            complete={validation.countedCourses > 0}
+            value={`${validation.countedCourses}`}
           />
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
@@ -3477,11 +3465,26 @@ function TeacherStatusPanel({
   );
 }
 
-function StatusMetric({ label, value }: { label: string; value: string }) {
+function StatusMetric({
+  label,
+  value,
+  complete,
+}: {
+  label: string;
+  value: string;
+  complete?: boolean;
+}) {
   return (
     <div className="min-w-0 rounded-md border bg-muted/35 p-2">
       <div className="truncate text-muted-foreground text-xs">{label}</div>
-      <div className="truncate font-semibold tabular-nums">{value}</div>
+      <div
+        className={cn(
+          "truncate font-semibold tabular-nums",
+          complete ? "text-availability" : undefined,
+        )}
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -3872,16 +3875,16 @@ function TeacherQueueMetrics({
     value: number;
     tone: "default" | "secondary";
   }> = [
-    { label: "Borrador", value: counts.borrador, tone: "secondary" },
-    { label: "Enviado", value: counts.enviado, tone: "default" },
-    {
-      label: "Reapertura",
-      value: counts.solicitud_reapertura,
-      tone: "secondary",
-    },
-    { label: "Obs.", value: counts.observado, tone: "secondary" },
-    { label: "Aprob.", value: counts.aprobado, tone: "default" },
-  ];
+      { label: "Borrador", value: counts.borrador, tone: "secondary" },
+      { label: "Enviado", value: counts.enviado, tone: "default" },
+      {
+        label: "Reapertura",
+        value: counts.solicitud_reapertura,
+        tone: "secondary",
+      },
+      { label: "Obs.", value: counts.observado, tone: "secondary" },
+      { label: "Aprob.", value: counts.aprobado, tone: "default" },
+    ];
   return (
     <div className="hidden grid-cols-2 gap-1 md:grid">
       {rows.map((row) => (
@@ -4116,9 +4119,7 @@ function CoursesReviewCard({
     ? "Cerrado"
     : assignment.alreadyAssigned
       ? "Asignado"
-      : assignment.limitReached
-        ? "Cupo lleno"
-        : "Asignar";
+      : "Asignar";
 
   useEffect(() => {
     setSchool(defaultSchool);
@@ -4219,12 +4220,6 @@ function CoursesReviewCard({
               {assignLabel}
             </Button>
           </div>
-          {assignment.limitReached ? (
-            <p className="text-muted-foreground text-xs">
-              {contractRules[teacher.contract].label}: máximo{" "}
-              {contractRules[teacher.contract].maxCourses} cursos no Tesis.
-            </p>
-          ) : null}
         </div>
         <div className="h-[clamp(160px,34vh,320px)] min-h-0 overflow-hidden rounded-md border bg-muted/20">
           <CourseCardsList
@@ -4506,9 +4501,8 @@ function ScheduleBoard({
                     const key = slotKey(day.key, hour);
                     const isSelected = selected.has(key);
                     const Cell = interactive ? "button" : "div";
-                    const label = `${day.label} ${formatHour(hour)}: ${
-                      isSelected ? "disponible" : "sin marcar"
-                    }`;
+                    const label = `${day.label} ${formatHour(hour)}: ${isSelected ? "disponible" : "sin marcar"
+                      }`;
                     return (
                       <Cell
                         aria-label={interactive ? label : undefined}
@@ -4519,7 +4513,7 @@ function ScheduleBoard({
                             ? "border-availability bg-availability text-white"
                             : "bg-muted/20 hover:bg-availability-muted",
                           interactive &&
-                            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         )}
                         key={key}
                         onClick={
@@ -4573,9 +4567,8 @@ function ScheduleBoard({
                     const isSelected = selected.has(key);
                     const isClickable = interactive && canStartBlock;
                     const Cell = isClickable ? "button" : "div";
-                    const label = `${day.label} ${formatHour(hour)}: ${
-                      isSelected ? "disponible" : "sin marcar"
-                    }`;
+                    const label = `${day.label} ${formatHour(hour)}: ${isSelected ? "disponible" : "sin marcar"
+                      }`;
 
                     return (
                       <Cell
@@ -4589,7 +4582,7 @@ function ScheduleBoard({
                               ? "bg-card hover:bg-availability-muted"
                               : "bg-muted/10 cursor-not-allowed",
                           isClickable &&
-                            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         )}
                         key={key}
                         onClick={
@@ -4644,10 +4637,8 @@ function RulePanel({
     },
     {
       label: "Cursos",
-      complete:
-        validation.countedCourses <= rule.maxCourses &&
-        validation.countedCourses > 0,
-      value: `${validation.countedCourses}/${rule.maxCourses}`,
+      complete: validation.countedCourses > 0,
+      value: `${validation.countedCourses}`,
     },
   ];
 
@@ -4787,9 +4778,6 @@ function scheduleCorrectionMessage(
   }
   if (validation.countedCourses <= 0) {
     return "Falta seleccionar al menos un curso no Tesis.";
-  }
-  if (validation.countedCourses > rule.maxCourses) {
-    return `Reduce cursos no Tesis a ${rule.maxCourses}.`;
   }
   return "Aún faltan reglas por completar.";
 }
