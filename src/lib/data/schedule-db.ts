@@ -1,5 +1,6 @@
 import { Pool, type QueryResultRow } from "pg";
 import {
+  ALLOWED_AVAILABILITY_BLOCKS,
   type ContractKey,
   type Course,
   contractRules,
@@ -934,7 +935,14 @@ export async function setAvailability(
   }
   await ensurePeriodOpen();
   const workspace = await getWritableTeacherWorkspace(identity);
+  const uniqueRequested = new Set(availability);
   const normalizedAvailability = normalizeAvailability(availability);
+  if (normalizedAvailability.length !== uniqueRequested.size) {
+    throw new ScheduleError(
+      "Solo se permiten bloques completos de 4 horas en los rangos 08:00-12:00, 14:00-18:00 y 18:00-22:00.",
+      400,
+    );
+  }
   if (workspace.sandbox) {
     await replaceSandboxAvailability(
       workspace.profile.id,
@@ -1965,13 +1973,28 @@ async function readDepartments() {
 
 function normalizeAvailability(availability: string[]) {
   const allowedDays = new Set(days.map((day) => day.key));
-  const allowedHours = new Set(hours);
-  const normalized = new Set<string>();
+  const allowedHours = new Set(ALLOWED_AVAILABILITY_BLOCKS.flat());
+  const byDay = new Map<DayKey, Set<number>>();
   for (const key of availability) {
     const [day, rawHour] = key.split("-");
     const hour = Number(rawHour);
     if (allowedDays.has(day as DayKey) && allowedHours.has(hour)) {
-      normalized.add(slotKey(day as DayKey, hour));
+      let dayHours = byDay.get(day as DayKey);
+      if (!dayHours) {
+        dayHours = new Set<number>();
+        byDay.set(day as DayKey, dayHours);
+      }
+      dayHours.add(hour);
+    }
+  }
+  const normalized = new Set<string>();
+  for (const [day, dayHours] of byDay.entries()) {
+    for (const block of ALLOWED_AVAILABILITY_BLOCKS) {
+      if (block.every((hour) => dayHours.has(hour))) {
+        for (const hour of block) {
+          normalized.add(slotKey(day, hour));
+        }
+      }
     }
   }
   return Array.from(normalized).sort();

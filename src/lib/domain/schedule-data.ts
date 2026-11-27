@@ -55,6 +55,23 @@ export const days: { key: DayKey; label: string }[] = [
 
 export const hours = Array.from({ length: 14 }, (_, index) => index + 8);
 
+export const ALLOWED_AVAILABILITY_BLOCKS: readonly (readonly number[])[] = [
+  [8, 9, 10, 11],
+  [14, 15, 16, 17],
+  [18, 19, 20, 21],
+];
+
+/**
+ * Devuelve el bloque fijo de 4 horas al que pertenece `hour`, o `null` si está fuera de los rangos permitidos (ej. 12-14).
+ */
+export function getAvailabilityBlockForHour(
+  hour: number,
+): readonly number[] | null {
+  return (
+    ALLOWED_AVAILABILITY_BLOCKS.find((block) => block.includes(hour)) ?? null
+  );
+}
+
 export const contractRules: Record<
   ContractKey,
   {

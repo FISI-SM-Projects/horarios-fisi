@@ -205,4 +205,39 @@ describe("schedule rules", () => {
       canAssign: false,
     });
   });
+
+  test("rejects shifted 4-hour blocks such as 9-13 and 12-16", () => {
+    const validation = validateTeacherRules(
+      profile({
+        contract: "partial10",
+        courses: [courseCatalog[0]],
+        availability: seedSlots({
+          lunes: [9, 10, 11, 12],
+          martes: [12, 13, 14, 15],
+          miercoles: [8, 9, 10, 11],
+        }),
+      }),
+    );
+
+    expect(validation.selectedHours).toBe(12);
+    expect(validation.blockDays).toBe(1);
+    expect(validation.complete).toBe(false);
+  });
+
+  test("rejects incomplete blocks even within allowed ranges", () => {
+    const validation = validateTeacherRules(
+      profile({
+        contract: "partial10",
+        courses: [courseCatalog[0]],
+        availability: seedSlots({
+          lunes: [8, 9, 10, 11],
+          martes: [14, 15, 16],
+          miercoles: [18, 19, 20, 21],
+        }),
+      }),
+    );
+
+    expect(validation.blockDays).toBe(2);
+    expect(validation.complete).toBe(false);
+  });
 });

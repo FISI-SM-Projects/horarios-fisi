@@ -1,4 +1,5 @@
 import {
+  ALLOWED_AVAILABILITY_BLOCKS,
   type Course,
   contractRules,
   type DayKey,
@@ -94,19 +95,12 @@ export function courseAssignmentState(
 }
 
 function countFourHourBlocks(values: number[]) {
-  const sorted = Array.from(new Set(values)).sort((a, b) => a - b);
+  const hourSet = new Set(values);
   let blocks = 0;
-  let run = 0;
-  let previous = Number.NaN;
-  for (const value of sorted) {
-    if (value === previous + 1) {
-      run += 1;
-    } else {
-      blocks += Math.floor(run / 4);
-      run = 1;
+  for (const block of ALLOWED_AVAILABILITY_BLOCKS) {
+    if (block.every((hour) => hourSet.has(hour))) {
+      blocks += 1;
     }
-    previous = value;
   }
-  blocks += Math.floor(run / 4);
   return blocks;
 }

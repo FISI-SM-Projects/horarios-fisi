@@ -150,6 +150,7 @@ import {
   days,
   departments,
   formatHour,
+  getAvailabilityBlockForHour,
   hours,
   normalizeDepartment,
   schools,
@@ -515,73 +516,35 @@ export function ScheduleApp({
       return;
     }
 
+    const blockHours = getAvailabilityBlockForHour(hour);
+    if (!blockHours) {
+      return;
+    }
+
     const clickedKey = slotKey(day, hour);
+    const blockKeys = blockHours.map((h) => slotKey(day, h));
     const currentAvailability = profile.availability;
     const isCurrentlySelected = currentAvailability.includes(clickedKey);
 
     let nextSlots: string[] = [];
 
     if (isCurrentlySelected) {
-      // Encuentra el bloque contiguo en este día que contiene la hora clickeada
-      const dayHours = currentAvailability
-        .filter((key) => key.startsWith(`${day}-`))
-        .map((key) => Number(key.split("-")[1]))
-        .sort((a, b) => a - b);
-
-      let blockStartIndex = dayHours.indexOf(hour);
-      while (
-        blockStartIndex > 0 &&
-        dayHours[blockStartIndex - 1] === dayHours[blockStartIndex] - 1
-      ) {
-        blockStartIndex -= 1;
-      }
-      let blockEndIndex = dayHours.indexOf(hour);
-      while (
-        blockEndIndex < dayHours.length - 1 &&
-        dayHours[blockEndIndex + 1] === dayHours[blockEndIndex] + 1
-      ) {
-        blockEndIndex += 1;
-      }
-      const blockHoursToRemove = dayHours.slice(
-        blockStartIndex,
-        blockEndIndex + 1,
-      );
-      const keysToRemove = new Set(
-        blockHoursToRemove.map((h) => slotKey(day, h)),
-      );
+      const keysToRemove = new Set(blockKeys);
       nextSlots = currentAvailability.filter((key) => !keysToRemove.has(key));
     } else {
-      const hourIndex = hours.indexOf(hour);
-      if (hourIndex === -1 || hourIndex + 4 > hours.length) {
-        toast.error(
-          "No hay espacio suficiente para un bloque completo de 4 horas.",
-        );
-        return;
-      }
-      const blockHours = hours.slice(hourIndex, hourIndex + 4);
-      const blockKeys = blockHours.map((h) => slotKey(day, h));
-
-      // Comprobación de solapamiento
-      const overlaps = blockKeys.some((key) =>
-        currentAvailability.includes(key),
-      );
-      if (overlaps) {
-        toast.error(
-          "El bloque de 4 horas se solapa con un horario ya seleccionado.",
-        );
-        return;
-      }
-
       // Comprobación de límite del contrato
       const rule = contractRules[profile.contract];
-      if (currentAvailability.length + 4 > rule.requiredHours) {
+      const newKeys = blockKeys.filter(
+        (key) => !currentAvailability.includes(key),
+      );
+      if (currentAvailability.length + newKeys.length > rule.requiredHours) {
         toast.error(
           `No puedes superar el total de ${rule.requiredHours} horas de tu régimen.`,
         );
         return;
       }
 
-      nextSlots = [...currentAvailability, ...blockKeys].sort();
+      nextSlots = [...currentAvailability, ...newKeys].sort();
     }
 
     const previous = data;
@@ -4495,29 +4458,38 @@ function ScheduleBoard({
                 <div className="grid grid-cols-2 gap-1.5 p-2">
                   {hours.map((hour) => {
                     const key = slotKey(day.key, hour);
-                    const isSelected = selected.has(key);
-                    const Cell = interactive ? "button" : "div";
-                    const label = `${day.label} ${formatHour(hour)}: ${isSelected ? "disponible" : "sin marcar"
-                      }`;
+                    const isAllowedHour = getAvailabilityBlockForHour(hour) !== null;
+                    const isSelected = isAllowedHour && selected.has(key);
+                    const isClickable = interactive && isAllowedHour;
+                    const Cell = isClickable ? "button" : "div";
+                    const label = `${day.label} ${formatHour(hour)}: ${
+                      !isAllowedHour
+                        ? "no disponible"
+                        : isSelected
+                          ? "disponible"
+                          : "sin marcar"
+                    }`;
                     return (
                       <Cell
                         aria-label={interactive ? label : undefined}
-                        aria-pressed={interactive ? isSelected : undefined}
+                        aria-pressed={isClickable ? isSelected : undefined}
                         className={cn(
                           "flex h-9 items-center justify-between rounded-md border px-2 text-left text-xs transition-colors",
-                          isSelected
-                            ? "border-availability bg-availability text-white"
-                            : "bg-muted/20 hover:bg-availability-muted",
-                          interactive &&
-                          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          !isAllowedHour
+                            ? "cursor-not-allowed bg-muted/60 text-muted-foreground opacity-65"
+                            : isSelected
+                              ? "border-availability bg-availability text-white"
+                              : "bg-muted/20 hover:bg-availability-muted",
+                          isClickable &&
+                            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         )}
                         key={key}
                         onClick={
-                          interactive
+                          isClickable
                             ? () => onToggleSlot?.(day.key, hour)
                             : undefined
                         }
-                        type={interactive ? "button" : undefined}
+                        type={isClickable ? "button" : undefined}
                       >
                         <span className="tabular-nums">{formatHour(hour)}</span>
                         {isSelected ? <Check className="size-3.5" /> : null}
@@ -4547,38 +4519,52 @@ function ScheduleBoard({
           </div>
           {/* Celdas de seleccion de horarios */}
           <div className="grid min-h-0 flex-1 grid-rows-[repeat(14,minmax(0,1fr))]">
-            {hours.map((hour, hourIndex) => {
-              const canStartBlock = hourIndex + 4 <= hours.length;
+            {hours.map((hour) => {
+              const isAllowedHour = getAvailabilityBlockForHour(hour) !== null;
 
               return (
                 <div
                   className="grid min-h-0 grid-cols-[92px_repeat(6,minmax(94px,1fr))] border-b last:border-b-0"
                   key={hour}
                 >
-                  <div className="flex items-center justify-center border-r bg-muted/55 px-1.5 text-center font-medium text-[11px] tabular-nums leading-tight">
+                  <div
+                    className={cn(
+                      "flex items-center justify-center border-r px-1.5 text-center font-medium text-[11px] tabular-nums leading-tight",
+                      isAllowedHour
+                        ? "bg-muted/55"
+                        : "bg-muted/80 text-muted-foreground",
+                    )}
+                  >
                     {formatHour(hour)}
                   </div>
                   {days.map((day) => {
                     const key = slotKey(day.key, hour);
-                    const isSelected = selected.has(key);
-                    const isClickable = interactive && canStartBlock;
+                    const isSelected = isAllowedHour && selected.has(key);
+                    const isClickable = interactive && isAllowedHour;
                     const Cell = isClickable ? "button" : "div";
-                    const label = `${day.label} ${formatHour(hour)}: ${isSelected ? "disponible" : "sin marcar"
-                      }`;
+                    const label = `${day.label} ${formatHour(hour)}: ${
+                      !isAllowedHour
+                        ? "no disponible"
+                        : isSelected
+                          ? "disponible"
+                          : "sin marcar"
+                    }`;
 
                     return (
                       <Cell
                         aria-label={interactive ? label : undefined}
-                        aria-pressed={interactive ? isSelected : undefined}
+                        aria-pressed={isClickable ? isSelected : undefined}
                         className={cn(
                           "flex min-h-0 items-center justify-center border-r text-xs transition-colors last:border-r-0",
-                          isSelected
-                            ? "bg-availability text-white"
-                            : isClickable
-                              ? "bg-card hover:bg-availability-muted"
-                              : "bg-muted/10 cursor-not-allowed",
+                          !isAllowedHour
+                            ? "cursor-not-allowed bg-muted/50 text-muted-foreground"
+                            : isSelected
+                              ? "bg-availability text-white"
+                              : isClickable
+                                ? "bg-card hover:bg-availability-muted"
+                                : "bg-muted/10 cursor-not-allowed",
                           isClickable &&
-                          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         )}
                         key={key}
                         onClick={

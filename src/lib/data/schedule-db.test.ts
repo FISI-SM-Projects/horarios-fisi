@@ -268,6 +268,35 @@ describeDb("schedule-db (DB-backed characterization)", () => {
     expect(rows[0].status).toBe("borrador");
   });
 
+  it("setAvailability rejects slots in 12-14, shifted blocks, and incomplete blocks", async () => {
+    const teacherId = "t-avail-strict";
+    await insertUser("u-avail-strict", `${teacherId}@unmsm.edu.pe`, "docente");
+    await insertTeacher(teacherId, {
+      email: `${teacherId}@unmsm.edu.pe`,
+      status: "borrador",
+    });
+    await sql.query("update teacher_profiles set ldap_uid = $1 where id = $2", [
+      "u-avail-strict",
+      teacherId,
+    ]);
+    const identity = makeIdentity({
+      clerkUserId: "u-avail-strict",
+      email: `${teacherId}@unmsm.edu.pe`,
+    });
+
+    await expect(
+      setAvailability(identity, seedSlots({ lunes: [12, 13] })),
+    ).rejects.toThrow("Solo se permiten bloques completos de 4 horas");
+
+    await expect(
+      setAvailability(identity, seedSlots({ lunes: [9, 10, 11, 12] })),
+    ).rejects.toThrow("Solo se permiten bloques completos de 4 horas");
+
+    await expect(
+      setAvailability(identity, seedSlots({ lunes: [14, 15, 16] })),
+    ).rejects.toThrow("Solo se permiten bloques completos de 4 horas");
+  });
+
   it("submitSchedule throws when rules are not met", async () => {
     const teacherId = "t-submit-fail";
     await insertUser("u-submit-fail", `${teacherId}@unmsm.edu.pe`, "docente");
